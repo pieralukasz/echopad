@@ -12,6 +12,7 @@ class WAVWriter {
     private let channels: UInt16
     private let bitsPerSample: UInt16 = 16
     private var dataSize: UInt32 = 0
+    private let writeQueue = DispatchQueue(label: "wav-writer")
 
     init(path: String, sampleRate: UInt32, channels: UInt16) throws {
         self.filePath = path
@@ -45,8 +46,10 @@ class WAVWriter {
     }
 
     func writeSamples(_ data: Data) {
-        fileHandle.write(data)
-        dataSize += UInt32(data.count)
+        writeQueue.sync {
+            fileHandle.write(data)
+            dataSize += UInt32(data.count)
+        }
     }
 
     func finalize() {

@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """echopad — record a meeting with live transcription, save to Obsidian."""
 
+import contextlib
 import io
 import json
 import os
 import re
+import shutil
 import signal
 import subprocess
 import sys
@@ -24,7 +26,7 @@ CONFIG_PATH = PROJECT_DIR / "config.json"
 AUDIO_CAPTURE_BIN = PROJECT_DIR / "audio-capture"
 WHISPER_STREAM_BIN = "/opt/homebrew/bin/whisper-stream"
 STREAM_MODEL = Path.home() / ".config/open-wispr/models/ggml-medium.bin"
-USERNAME = os.getlogin()
+USERNAME = os.environ.get("USER", "user")
 
 DEFAULT_CONFIG = {
     "vault_path": "~/Library/Mobile Documents/iCloud~md~obsidian/Documents/My Life",
@@ -46,8 +48,11 @@ HALLUCINATION_PATTERNS = {
 def load_config():
     config = DEFAULT_CONFIG.copy()
     if CONFIG_PATH.exists():
-        with open(CONFIG_PATH) as f:
-            config.update(json.load(f))
+        try:
+            with open(CONFIG_PATH) as f:
+                config.update(json.load(f))
+        except json.JSONDecodeError as e:
+            print(f"  \033[93m!\033[0m Invalid config.json: {e}. Using defaults.", file=sys.stderr)
     config["vault_path"] = os.path.expanduser(config["vault_path"])
     return config
 
@@ -84,20 +89,27 @@ def is_hallucination(text: str) -> bool:
     return any(h in clean for h in HALLUCINATION_PATTERNS) or len(clean) < 2
 
 
+def _kill_proc(proc):
+    """Safely kill a subprocess."""
+    if proc and proc.poll() is None:
+        proc.kill()
+        proc.wait()
+
+
 def transcribe_quiet(wav_path: str, config: dict) -> dict:
-    """Transcribe with mlx-whisper, suppressing all output."""
+    """Transcribe with mlx-whisper, suppressing progress output (stderr preserved)."""
     import mlx_whisper
 
     kwargs = {"path_or_hf_repo": config["model"], "verbose": False}
     if config.get("language"):
         kwargs["language"] = config["language"]
 
-    old_stdout, old_stderr = sys.stdout, sys.stderr
-    sys.stdout = sys.stderr = io.StringIO()
+    old_stdout = sys.stdout
+    sys.stdout = io.StringIO()
     try:
         return mlx_whisper.transcribe(wav_path, **kwargs)
     finally:
-        sys.stdout, sys.stderr = old_stdout, old_stderr
+        sys.stdout = old_stdout
 
 
 # ─── Record ──────────────────────────────────────────────────────────────────
@@ -121,25 +133,56 @@ def record(config: dict):
     # ── Mic ──
     chunks = []
     def audio_callback(indata, frames, time_info, status):
+        if status:
+            print(f"\n  \033[93m!\033[0m Audio: {status}\033[K", file=sys.stderr, flush=True)
         chunks.append(indata.copy())
-    mic_stream = sd.InputStream(samplerate=sample_rate, channels=1, dtype="int16", callback=audio_callback)
+
+    try:
+        mic_stream = sd.InputStream(samplerate=sample_rate, channels=1, dtype="int16", callback=audio_callback)
+    except sd.PortAudioError as e:
+        print(f"\n  \033[91mError:\033[0m Cannot open microphone: {e}", file=sys.stderr)
+        print("  Check System Settings > Privacy & Security > Microphone.", file=sys.stderr)
+        sys.exit(1)
 
     # ── System audio ──
     sys_proc = None
     if capture_system:
-        sys_proc = subprocess.Popen(
-            [str(AUDIO_CAPTURE_BIN), "--output", sys_wav, "--sample-rate", str(sample_rate), "--no-mic"],
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-        )
+        if not AUDIO_CAPTURE_BIN.exists():
+            print(f"  \033[93m!\033[0m audio-capture binary not found at {AUDIO_CAPTURE_BIN}. Skipping system audio.", file=sys.stderr)
+            capture_system = False
+        else:
+            sys_proc = subprocess.Popen(
+                [str(AUDIO_CAPTURE_BIN), "--output", sys_wav, "--sample-rate", str(sample_rate), "--no-mic"],
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            )
+            time.sleep(0.5)
+            if sys_proc.poll() is not None:
+                print(f"  \033[93m!\033[0m audio-capture crashed on start. Recording mic only.", file=sys.stderr)
+                sys_proc = None
+                capture_system = False
 
     # ── whisper-stream (live preview) ──
     lang = config.get("language") or "auto"
-    whisper_proc = subprocess.Popen(
-        [WHISPER_STREAM_BIN, "-m", str(STREAM_MODEL), "-l", lang,
-         "--step", "3000", "--length", "10000", "--keep", "200", "--vad-thold", "0.6"],
-        stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL,
-        text=True, bufsize=1,
-    )
+    whisper_proc = None
+    if Path(WHISPER_STREAM_BIN).exists() and STREAM_MODEL.exists():
+        try:
+            whisper_proc = subprocess.Popen(
+                [WHISPER_STREAM_BIN, "-m", str(STREAM_MODEL), "-l", lang,
+                 "--step", "3000", "--length", "10000", "--keep", "200", "--vad-thold", "0.6"],
+                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL,
+                text=True, bufsize=1,
+            )
+            time.sleep(0.5)
+            if whisper_proc.poll() is not None:
+                print(f"  \033[93m!\033[0m whisper-stream crashed. Live preview disabled.", file=sys.stderr)
+                whisper_proc = None
+        except FileNotFoundError:
+            whisper_proc = None
+    else:
+        if not Path(WHISPER_STREAM_BIN).exists():
+            print(f"  \033[93m!\033[0m whisper-stream not found. Install: brew install whisper-cpp", file=sys.stderr)
+        if not STREAM_MODEL.exists():
+            print(f"  \033[93m!\033[0m Stream model not found at {STREAM_MODEL}", file=sys.stderr)
 
     mic_stream.start()
     start = time.time()
@@ -148,43 +191,50 @@ def record(config: dict):
 
     print()
     sources = "mic + system" if capture_system else "mic"
+    live_status = "live preview on" if whisper_proc else "live preview off"
     print(f"  \033[91m●\033[0m REC ({sources})  Press \033[1mEnter\033[0m to stop")
-    print(f"  \033[90m  live preview (medium model) — final transcript uses large-v3-turbo\033[0m")
+    print(f"  \033[90m  {live_status} — final transcript uses large-v3-turbo\033[0m")
     print()
 
+    # ── Thread: read whisper-stream ──
     def read_stream():
         nonlocal last_text
-        for line in whisper_proc.stdout:
-            if stop:
-                break
-            clean = strip_ansi(line).strip()
-            if not clean or clean == "[Start speaking]":
-                continue
-            if is_hallucination(clean):
-                continue
-            if clean == last_text:
-                continue
+        try:
+            for line in whisper_proc.stdout:
+                if stop:
+                    break
+                clean = strip_ansi(line).strip()
+                if not clean or clean == "[Start speaking]":
+                    continue
+                if is_hallucination(clean):
+                    continue
+                if clean == last_text:
+                    continue
 
-            elapsed = int(time.time() - start)
-            ts = fmt_elapsed(elapsed)
+                elapsed = int(time.time() - start)
+                ts = fmt_elapsed(elapsed)
 
-            is_refinement = False
-            if last_text:
-                if clean.startswith(last_text) or last_text.startswith(clean):
-                    is_refinement = True
-                else:
-                    last_words = set(last_text.lower().split())
-                    new_words = set(clean.lower().split())
-                    if last_words and len(last_words & new_words) / len(last_words) > 0.5:
+                is_refinement = False
+                if last_text:
+                    if clean.startswith(last_text) or last_text.startswith(clean):
                         is_refinement = True
-            last_text = clean
+                    else:
+                        last_words = set(last_text.lower().split())
+                        new_words = set(clean.lower().split())
+                        if last_words and len(last_words & new_words) / len(last_words) > 0.5:
+                            is_refinement = True
+                last_text = clean
 
-            if is_refinement:
-                print(f"\r  \033[91m●\033[0m \033[90m{ts}\033[0m  {clean}\033[K", end="", flush=True)
-            else:
-                print(f"\n  \033[91m●\033[0m \033[90m{ts}\033[0m  {clean}\033[K", end="", flush=True)
+                if is_refinement:
+                    print(f"\r  \033[91m●\033[0m \033[90m{ts}\033[0m  {clean}\033[K", end="", flush=True)
+                else:
+                    print(f"\n  \033[91m●\033[0m \033[90m{ts}\033[0m  {clean}\033[K", end="", flush=True)
+        except (IOError, UnicodeDecodeError):
+            if not stop:
+                print(f"\n  \033[93m!\033[0m Live preview stopped unexpectedly\033[K", flush=True)
 
-    threading.Thread(target=read_stream, daemon=True).start()
+    if whisper_proc:
+        threading.Thread(target=read_stream, daemon=True).start()
 
     def wait_for_enter():
         nonlocal stop
@@ -195,6 +245,10 @@ def record(config: dict):
     try:
         while not stop:
             time.sleep(0.5)
+            # Monitor system audio process
+            if sys_proc and sys_proc.poll() is not None and not stop:
+                print(f"\n  \033[93m!\033[0m System audio capture stopped unexpectedly\033[K", flush=True)
+                sys_proc = None
     except KeyboardInterrupt:
         stop = True
 
@@ -203,12 +257,14 @@ def record(config: dict):
     # ── Stop ──
     mic_stream.stop()
     mic_stream.close()
-    whisper_proc.kill()
-    try:
-        whisper_proc.stdout.close()
-    except Exception:
-        pass
-    whisper_proc.wait()
+
+    if whisper_proc:
+        whisper_proc.kill()
+        try:
+            whisper_proc.stdout.close()
+        except OSError:
+            pass
+        whisper_proc.wait()
 
     if sys_proc:
         sys_proc.send_signal(signal.SIGINT)
@@ -221,7 +277,11 @@ def record(config: dict):
     print(f"\n\n  \033[92m■\033[0m Stopped after {fmt_elapsed(int(duration))}")
 
     # ── Save mic WAV ──
-    audio_data = np.concatenate(chunks)
+    if chunks:
+        audio_data = np.concatenate(chunks)
+    else:
+        audio_data = np.array([], dtype=np.int16)
+        print("  \033[93m!\033[0m No mic audio recorded", file=sys.stderr)
     sf.write(mic_wav, audio_data, sample_rate)
 
     has_sys = capture_system and os.path.exists(sys_wav) and os.path.getsize(sys_wav) > 44
@@ -229,19 +289,23 @@ def record(config: dict):
     # ── Merge for archival ──
     if has_sys:
         print("  \033[93m⟳\033[0m Mixing audio...")
-        r = subprocess.run(
-            ["ffmpeg", "-y", "-i", mic_wav, "-i", sys_wav,
-             "-filter_complex", "[0:a][1:a]amix=inputs=2:duration=longest[out]",
-             "-map", "[out]", "-ar", str(sample_rate), "-ac", "1", final_wav],
-            capture_output=True,
-        )
-        if r.returncode == 0:
-            pass  # keep mic_wav and sys_wav for transcription
-        else:
-            os.rename(mic_wav, final_wav)
+        try:
+            r = subprocess.run(
+                ["ffmpeg", "-y", "-i", mic_wav, "-i", sys_wav,
+                 "-filter_complex", "[0:a][1:a]amix=inputs=2:duration=longest[out]",
+                 "-map", "[out]", "-ar", str(sample_rate), "-ac", "1", final_wav],
+                capture_output=True,
+            )
+            if r.returncode != 0:
+                print(f"  \033[93m!\033[0m ffmpeg merge failed. Keeping separate mic/system files.", file=sys.stderr)
+                shutil.move(mic_wav, final_wav)
+                has_sys = False
+        except FileNotFoundError:
+            print(f"  \033[93m!\033[0m ffmpeg not found. Install: brew install ffmpeg", file=sys.stderr)
+            shutil.move(mic_wav, final_wav)
             has_sys = False
     else:
-        os.rename(mic_wav, final_wav)
+        shutil.move(mic_wav, final_wav)
 
     return final_wav, mic_wav if has_sys else None, sys_wav if has_sys else None, duration
 
@@ -262,7 +326,7 @@ def save_to_obsidian(wav_path: str, segments: list[dict], title: str, duration: 
     audio_dir = vault_path / "attachments" / "meetings"
     final_wav = str(audio_dir / f"{final_name}.wav")
     if wav_path != final_wav:
-        os.rename(wav_path, final_wav)
+        shutil.move(wav_path, final_wav)
 
     audio_filename = f"attachments/meetings/{final_name}.wav"
     lang = config.get("language") or "auto"
@@ -292,8 +356,15 @@ def save_to_obsidian(wav_path: str, segments: list[dict], title: str, duration: 
         lines.append("")
 
     md_path = str(meetings_dir / f"{final_name}.md")
-    with open(md_path, "w") as f:
-        f.write("\n".join(lines))
+    try:
+        with open(md_path, "w") as f:
+            f.write("\n".join(lines))
+    except OSError as e:
+        print(f"  \033[91m!\033[0m Failed to write transcript: {e}", file=sys.stderr)
+        print("\n  --- Transcript ---")
+        for line in lines:
+            print(f"  {line}")
+        return ""
 
     return md_path
 
@@ -324,14 +395,13 @@ def main():
     sys_display = "mic + system" if config.get("capture_system_audio", True) else "mic only"
     print(f"  Language: {lang_display} | Audio: {sys_display}")
 
-    # Record with live preview (whisper-stream)
     wav_path, mic_wav, sys_wav, duration = record(config)
 
     if not title:
         print()
         title = input("  Meeting title: ").strip() or "Meeting"
 
-    # Final transcription — separate mic/system with large-v3-turbo, quiet
+    # Final transcription — separate mic/system with large-v3-turbo
     segments = []
 
     if mic_wav and os.path.exists(mic_wav):
@@ -341,7 +411,10 @@ def main():
             text = seg["text"].strip()
             if text and not is_hallucination(text):
                 segments.append({"start": seg["start"], "text": text, "speaker": USERNAME})
-        os.remove(mic_wav)
+        try:
+            os.remove(mic_wav)
+        except OSError:
+            pass
 
     if sys_wav and os.path.exists(sys_wav):
         print("  \033[93m⟳\033[0m Transcribing (system)...")
@@ -350,10 +423,12 @@ def main():
             text = seg["text"].strip()
             if text and not is_hallucination(text):
                 segments.append({"start": seg["start"], "text": text, "speaker": "system"})
-        os.remove(sys_wav)
+        try:
+            os.remove(sys_wav)
+        except OSError:
+            pass
 
     if not segments and not mic_wav:
-        # No separate sources — transcribe merged
         print(f"  \033[93m⟳\033[0m Transcribing...")
         result = transcribe_quiet(wav_path, config)
         for seg in result.get("segments", []):
@@ -363,7 +438,6 @@ def main():
 
     segments.sort(key=lambda s: s["start"])
 
-    # Show final transcript
     print()
     for seg in segments:
         ts = fmt_timestamp(seg["start"])
@@ -373,19 +447,19 @@ def main():
         else:
             print(f"  \033[90m{ts}\033[0m {seg['text']}")
 
-    # Save
     md_path = save_to_obsidian(wav_path, segments, title, duration, config)
 
-    print(f"\n  \033[92m✓\033[0m Saved to Obsidian: {Path(md_path).name}")
+    if md_path:
+        print(f"\n  \033[92m✓\033[0m Saved to Obsidian: {Path(md_path).name}")
 
-    if config.get("open_in_obsidian", True):
-        from urllib.parse import quote
-        vault_name = Path(config["vault_path"]).name
-        meetings_dir = config["meetings_dir"]
-        note_name = Path(md_path).stem
-        uri = f"obsidian://open?vault={quote(vault_name)}&file={quote(f'{meetings_dir}/{note_name}')}"
-        subprocess.run(["open", uri], check=False)
-        print(f"  \033[92m✓\033[0m Opened in Obsidian")
+        if config.get("open_in_obsidian", True):
+            from urllib.parse import quote
+            vault_name = Path(config["vault_path"]).name
+            meetings_dir = config["meetings_dir"]
+            note_name = Path(md_path).stem
+            uri = f"obsidian://open?vault={quote(vault_name)}&file={quote(f'{meetings_dir}/{note_name}')}"
+            subprocess.run(["open", uri], check=False)
+            print(f"  \033[92m✓\033[0m Opened in Obsidian")
 
     print()
 
