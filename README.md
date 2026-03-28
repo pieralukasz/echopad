@@ -13,26 +13,31 @@ No cloud services. No subscriptions. Everything runs on-device.
   ● REC (mic + system)  Press Enter to stop
     live preview (medium model) — final transcript uses large-v3-turbo
 
-  ● 00:07  Okej, no to w takim razie chcialbym sprobowac i zobaczyc
-           w jaki sposob bedzie to dzialalo.
-  ● 00:13  (upbeat music)
-  ● 00:19  ♪ Never give ♪ ♪ Think better ♪
+  ● 00:05  Alright, let's kick off the sprint planning.
+  ● 00:11  Can everyone see my screen?
+  ● 00:17  Yeah, looks good. So for Q2, the main focus is auth.
 
-  ■ Stopped after 00:32
+  ■ Stopped after 05:23
   ⟳ Mixing audio...
 
   Meeting title: Sprint Planning
 
-  ⟳ Transcribing (lukaszpiera)...
+  ⟳ Transcribing (alex)...
   ⟳ Transcribing (system)...
 
-  [00:00] (lukaszpiera) Ok, no to w takim razie chcialbym sprobowac
-          i zobaczyc w jaki sposob bedzie to dzialalo.
-  [00:00] (system) about you and me but today i see our reflections
-          clearly in hollywood laying on the screen
-  [00:07] (system) you just need a better life than this you need
-          something i can never give
-  [00:13] (system) sometimes all i think about is you
+  [00:00] (alex) Alright, let's kick off the sprint planning.
+          Can everyone see my screen?
+  [00:08] (system) Yeah, looks good. I can see it.
+  [00:12] (alex) Great. So for Q2, the main focus is the new
+          authentication system. We need to migrate from
+          session tokens to JWTs.
+  [00:25] (system) Makes sense. What's the timeline on that?
+  [00:30] (alex) We're targeting end of April. I've broken it
+          down into three epics — let me walk you through them.
+  [00:42] (system) Sounds good. One thing — are we also
+          handling the mobile token refresh in this sprint?
+  [00:50] (alex) Good question. Let's add that as a separate
+          story under the second epic.
 
   ✓ Saved to Obsidian: 2026-03-28 14.00 - Sprint Planning.md
   ✓ Opened in Obsidian
@@ -208,11 +213,11 @@ audio: "[[attachments/meetings/2026-03-28 14.00 - Sprint Planning.wav]]"
 
 # Sprint Planning — Transcript
 
-[00:00] **(lukaszpiera)** Ok, zacznijmy spotkanie.
+[00:00] **(alex)** Alright, let's kick off the sprint planning.
 
-[00:05] **(system)** Hi! Can you hear me okay?
+[00:08] **(system)** Yeah, looks good. I can see your screen.
 
-[00:08] **(lukaszpiera)** Yes, loud and clear. Let's start.
+[00:12] **(alex)** Great. So for Q2, the main focus is the new auth system.
 ```
 
 ## Architecture
