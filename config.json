@@ -1,0 +1,9 @@
+{
+  "vault_path": "~/Library/Mobile Documents/iCloud~md~obsidian/Documents/My Life",
+  "meetings_dir": "Meetings",
+  "model": "mlx-community/whisper-large-v3-turbo",
+  "include_mic": true,
+  "sample_rate": 16000,
+  "language": null,
+  "open_in_obsidian": true
+}

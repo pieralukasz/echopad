@@ -1,0 +1,4 @@
+audio-capture
+__pycache__/
+*.pyc
+icon.png
