@@ -123,6 +123,8 @@ ln -sf "$(pwd)/record-meeting.py" ~/.local/bin/record-meeting
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
+That's it. Run `record-meeting` from any terminal window and recording starts immediately.
+
 ### 6. Configure (optional)
 
 Edit `config.json` to point to your Obsidian vault:
