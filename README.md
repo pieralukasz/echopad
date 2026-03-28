@@ -129,7 +129,7 @@ Edit `config.json` to point to your Obsidian vault:
 
 ```json
 {
-  "vault_path": "~/Library/Mobile Documents/iCloud~md~obsidian/Documents/My Vault",
+  "vault_path": "~/Documents/Obsidian/Vault",
   "meetings_dir": "Meetings",
   "model": "mlx-community/whisper-large-v3-turbo",
   "sample_rate": 16000,
