@@ -117,13 +117,13 @@ swiftc -O -o audio-capture audio-capture.swift \
 ### 5. Add to PATH
 
 ```bash
-ln -sf "$(pwd)/record-meeting.py" ~/.local/bin/record-meeting
+ln -sf "$(pwd)/echopad.py" ~/.local/bin/echopad
 
 # Make sure ~/.local/bin is in your PATH (add to ~/.zshrc if needed)
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
-That's it. Run `record-meeting` from any terminal window and recording starts immediately.
+That's it. Run `echopad` from any terminal window and recording starts immediately.
 
 ### 6. Configure (optional)
 
@@ -163,12 +163,12 @@ Grant both in **System Settings > Privacy & Security**.
 ## Usage
 
 ```bash
-record-meeting                              # auto-detect language, mic + system
-record-meeting "Sprint Planning"            # with title
-record-meeting --pl                         # force Polish
-record-meeting --en "Team Standup"          # force English + title
-record-meeting --no-system                  # mic only (in-person meetings)
-record-meeting --pl --no-system "Standup"   # combine flags
+echopad                              # auto-detect language, mic + system
+echopad "Sprint Planning"            # with title
+echopad --pl                         # force Polish
+echopad --en "Team Standup"          # force English + title
+echopad --no-system                  # mic only (in-person meetings)
+echopad --pl --no-system "Standup"   # combine flags
 ```
 
 ## How it works
@@ -225,7 +225,7 @@ audio: "[[attachments/meetings/2026-03-28 14.00 - Sprint Planning.wav]]"
 ## Architecture
 
 ```
-record-meeting.py          CLI entry point (Python)
+echopad.py          CLI entry point (Python)
   ├── sounddevice          Microphone recording → mic.wav
   ├── audio-capture        System audio (Swift/ScreenCaptureKit) → sys.wav
   ├── whisper-stream       Live preview (whisper.cpp, medium model)
@@ -243,7 +243,7 @@ audio-capture.swift        ScreenCaptureKit CLI (~160 lines)
 ## Troubleshooting
 
 **"Thank you for watching" in live preview**
-Whisper hallucinates on silence. The hallucination filter catches most cases. Specify a language explicitly to reduce this: `record-meeting --en` or `record-meeting --pl`.
+Whisper hallucinates on silence. The hallucination filter catches most cases. Specify a language explicitly to reduce this: `echopad --en` or `echopad --pl`.
 
 **No system audio captured**
 Grant **Screen Recording** permission to your terminal app in System Settings > Privacy & Security > Screen Recording.
