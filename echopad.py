@@ -21,7 +21,7 @@ import soundfile as sf
 
 # ─── Config ──────────────────────────────────────────────────────────────────
 
-PROJECT_DIR = Path.home() / "Projects" / "meeting-recorder"
+PROJECT_DIR = Path.home() / "Projects" / "echopad"
 CONFIG_PATH = PROJECT_DIR / "config.json"
 AUDIO_CAPTURE_BIN = PROJECT_DIR / "audio-capture"
 WHISPER_STREAM_BIN = "/opt/homebrew/bin/whisper-stream"
