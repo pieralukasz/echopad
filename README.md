@@ -1,4 +1,4 @@
-# Meeting Recorder
+# echopad
 
 Local-first CLI tool for recording meetings with **live transcription** in the terminal. Records microphone + system audio (Zoom, Google Meet, Teams), transcribes using Whisper models running entirely on your Mac, and saves everything to Obsidian.
 
@@ -65,8 +65,8 @@ The `mlx-community/whisper-large-v3-turbo` model (~1.5 GB) will be downloaded au
 ### 4. Clone and build
 
 ```bash
-git clone https://github.com/pieralukasz/meeting-recorder.git
-cd meeting-recorder
+git clone https://github.com/pieralukasz/echopad.git
+cd echopad
 
 # Compile the Swift audio capture tool (ScreenCaptureKit)
 swiftc -O -o audio-capture audio-capture.swift \
