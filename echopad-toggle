@@ -1,0 +1,117 @@
+#!/bin/bash
+# echopad-toggle — Start or stop echopad recording via keyboard shortcut
+set -euo pipefail
+
+export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
+
+PID_FILE="/tmp/echopad-recording.pid"
+LOCK_FILE="/tmp/echopad-toggle.lock"
+ECHOPAD_DIR="$HOME/Projects/echopad"
+PYTHON="/opt/homebrew/bin/python3"
+LOG="$HOME/Library/Logs/echopad-recording.log"
+
+# Prevent race condition on double-press (macOS has no flock, use mkdir as atomic lock)
+if ! mkdir "$LOCK_FILE" 2>/dev/null; then
+    exit 0
+fi
+trap 'rmdir "$LOCK_FILE" 2>/dev/null' EXIT
+
+notify() {
+    local safe_title safe_msg
+    safe_title="${1//\"/\\\"}"
+    safe_msg="${2//\"/\\\"}"
+    osascript -e "display notification \"$safe_msg\" with title \"$safe_title\"" &>/dev/null &
+}
+
+log() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') $1" >> "$LOG"
+}
+
+get_title() {
+    # Brave Browser active tab title
+    local title
+    title=$(osascript -e '
+tell application "System Events"
+    if not (exists process "Brave Browser") then return ""
+end tell
+tell application "Brave Browser"
+    try
+        return title of active tab of front window
+    end try
+end tell
+return ""
+' 2>/dev/null) || true
+
+    if [ -n "$title" ]; then
+        # Strip common meeting prefixes
+        title="${title#Meet - }"
+        title="${title#Meet – }"
+        echo "$title"
+        return
+    fi
+
+    # Slack window name
+    title=$(osascript -e '
+tell application "System Events"
+    if not (exists process "Slack") then return ""
+    tell process "Slack"
+        try
+            return name of front window
+        end try
+    end tell
+end tell
+return ""
+' 2>/dev/null) || true
+
+    if [ -n "$title" ]; then
+        echo "$title"
+        return
+    fi
+
+    # Frontmost app window name
+    title=$(osascript -e '
+tell application "System Events"
+    try
+        set frontApp to first application process whose frontmost is true
+        return name of front window of frontApp
+    end try
+end tell
+return ""
+' 2>/dev/null) || true
+
+    if [ -n "$title" ]; then
+        echo "$title"
+        return
+    fi
+
+    echo "Meeting"
+}
+
+# ── Toggle logic ──
+
+if [ -f "$PID_FILE" ]; then
+    PID=$(cat "$PID_FILE")
+    if kill -0 "$PID" 2>/dev/null; then
+        # Currently recording → stop
+        kill -TERM "$PID" 2>/dev/null || true
+        rm -f "$PID_FILE"
+        notify "echopad" "Stopped. Transcribing..."
+        log "Stopped recording (PID $PID)"
+        exit 0
+    else
+        # Stale PID file → clean up, fall through to start
+        rm -f "$PID_FILE"
+        log "Cleaned stale PID file (PID $PID)"
+    fi
+fi
+
+# Not recording → start
+TITLE=$(get_title)
+
+notify "echopad" "Recording: $TITLE"
+log "Starting recording: $TITLE"
+
+$PYTHON "$ECHOPAD_DIR/echopad.py" --daemon "$TITLE" >> "$LOG" 2>&1 &
+echo $! > "$PID_FILE"
+
+log "Started recording (PID $!)"

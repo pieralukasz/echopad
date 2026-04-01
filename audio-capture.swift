@@ -52,18 +52,28 @@ class WAVWriter {
         }
     }
 
+    func writeSamplesAndPipe(_ data: Data) {
+        writeQueue.sync {
+            fileHandle.write(data)
+            dataSize += UInt32(data.count)
+            FileHandle.standardOutput.write(data)
+        }
+    }
+
     func finalize() {
-        // Update RIFF chunk size
-        fileHandle.seek(toFileOffset: 4)
-        var riffSize = (36 + dataSize).littleEndian
-        fileHandle.write(Data(bytes: &riffSize, count: 4))
+        writeQueue.sync {
+            // Update RIFF chunk size
+            fileHandle.seek(toFileOffset: 4)
+            var riffSize = (36 + dataSize).littleEndian
+            fileHandle.write(Data(bytes: &riffSize, count: 4))
 
-        // Update data chunk size
-        fileHandle.seek(toFileOffset: 40)
-        var dataSizLE = dataSize.littleEndian
-        fileHandle.write(Data(bytes: &dataSizLE, count: 4))
+            // Update data chunk size
+            fileHandle.seek(toFileOffset: 40)
+            var dataSizLE = dataSize.littleEndian
+            fileHandle.write(Data(bytes: &dataSizLE, count: 4))
 
-        fileHandle.closeFile()
+            fileHandle.closeFile()
+        }
     }
 }
 
@@ -75,11 +85,13 @@ class AudioRecorder: NSObject, SCStreamOutput {
     private let sampleRate: UInt32
     private let outputPath: String
     private let includeMic: Bool
+    private let pipeMode: Bool
 
-    init(outputPath: String, sampleRate: UInt32 = 16000, includeMic: Bool = true) {
+    init(outputPath: String, sampleRate: UInt32 = 16000, includeMic: Bool = true, pipeMode: Bool = false) {
         self.outputPath = outputPath
         self.sampleRate = sampleRate
         self.includeMic = includeMic
+        self.pipeMode = pipeMode
         super.init()
     }
 
@@ -162,7 +174,11 @@ class AudioRecorder: NSObject, SCStreamOutput {
             pcmData.append(Data(bytes: &int16Sample, count: 2))
         }
 
-        writer?.writeSamples(pcmData)
+        if pipeMode {
+            writer?.writeSamplesAndPipe(pcmData)
+        } else {
+            writer?.writeSamples(pcmData)
+        }
     }
 }
 
@@ -172,6 +188,7 @@ let args = CommandLine.arguments
 var outputPath = "recording.wav"
 var sampleRate: UInt32 = 16000
 var includeMic = true
+var pipeMode = false
 
 var i = 1
 while i < args.count {
@@ -184,12 +201,15 @@ while i < args.count {
         if i < args.count { sampleRate = UInt32(args[i]) ?? 16000 }
     case "--no-mic":
         includeMic = false
+    case "--pipe":
+        pipeMode = true
     case "--help", "-h":
         fputs("""
         Usage: audio-capture [options]
           --output, -o PATH    Output WAV file path (default: recording.wav)
           --sample-rate, -r N  Sample rate in Hz (default: 16000)
           --no-mic             Don't capture microphone, system audio only
+          --pipe               Also write raw PCM (Int16) to stdout for real-time processing
           --help, -h           Show this help
 
         Send SIGINT (Ctrl+C) to stop recording.
@@ -203,7 +223,10 @@ while i < args.count {
     i += 1
 }
 
-let recorder = AudioRecorder(outputPath: outputPath, sampleRate: sampleRate, includeMic: includeMic)
+let recorder = AudioRecorder(outputPath: outputPath, sampleRate: sampleRate, includeMic: includeMic, pipeMode: pipeMode)
+
+// Ignore SIGPIPE so a broken stdout pipe doesn't crash the process
+signal(SIGPIPE, SIG_IGN)
 
 // Handle SIGINT for clean shutdown
 let sigintSource = DispatchSource.makeSignalSource(signal: SIGINT, queue: .main)

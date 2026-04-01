@@ -1,4 +1,8 @@
 audio-capture
+mic-monitor
+echopad-hotkey
+EchopadHotkey.app/
 __pycache__/
 *.pyc
 icon.png
+config.json
