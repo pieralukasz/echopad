@@ -8,6 +8,7 @@ import queue
 import re
 import shutil
 import signal
+import socket
 import subprocess
 import sys
 import threading
@@ -22,16 +23,18 @@ import soundfile as sf
 
 # ─── Config ──────────────────────────────────────────────────────────────────
 
-PROJECT_DIR = Path.home() / "Projects" / "echopad"
+PROJECT_DIR = Path(__file__).resolve().parent
 CONFIG_PATH = PROJECT_DIR / "config.json"
 AUDIO_CAPTURE_BIN = PROJECT_DIR / "audio-capture"
 WHISPER_STREAM_BIN = "/opt/homebrew/bin/whisper-stream"
 STREAM_MODEL = Path.home() / ".config/open-wispr/models/ggml-medium.bin"
 USERNAME = os.environ.get("USER", "user")
+STATUS_PATH: Path | None = None
 
 DEFAULT_CONFIG = {
-    "vault_path": "~/Library/Mobile Documents/iCloud~md~obsidian/Documents/My Life",
+    "vault_path": "~/Documents/Obsidian",
     "meetings_dir": "Meetings",
+    "transcription_backend": "parakeet",
     "model": "mlx-community/whisper-large-v3-turbo",
     "sample_rate": 16000,
     "language": None,
@@ -39,6 +42,8 @@ DEFAULT_CONFIG = {
     "capture_system_audio": True,
     "diarization": True,
     "diarization_device": "mps",
+    "parakeet_binary": "~/Applications/EchoPad.app/Contents/MacOS/EchoPad",
+    "parakeet_port": 52473,
     "hf_token": None,
 }
 
@@ -71,6 +76,26 @@ def load_config():
             print(f"  \033[93m!\033[0m Invalid config.json: {e}. Using defaults.", file=sys.stderr)
     config["vault_path"] = os.path.expanduser(config["vault_path"])
     return config
+
+
+def set_status(state: str, message: str = "", **details):
+    """Publish machine-readable progress for the native menu bar app."""
+    if STATUS_PATH is None:
+        return
+    payload = {
+        "state": state,
+        "message": message,
+        "pid": os.getpid(),
+        "updated_at": datetime.now().isoformat(timespec="seconds"),
+        **details,
+    }
+    try:
+        STATUS_PATH.parent.mkdir(parents=True, exist_ok=True)
+        temporary = STATUS_PATH.with_suffix(f"{STATUS_PATH.suffix}.tmp")
+        temporary.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+        temporary.replace(STATUS_PATH)
+    except OSError as error:
+        print(f"  \033[93m!\033[0m Could not update app status: {error}", file=sys.stderr)
 
 
 # ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -254,6 +279,116 @@ class ChunkedTranscriber:
             return self._chunks_done
 
 
+class DeferredTranscriber:
+    """No-op recorder companion when final transcription is delegated to Parakeet."""
+
+    pending = 0
+    chunks_done = 0
+
+    def submit(self, audio_float32: np.ndarray, offset_seconds: float):
+        pass
+
+    def finish(self):
+        pass
+
+    def run(self):
+        pass
+
+    def wait(self, timeout=None):
+        return True
+
+    def get_segments(self):
+        return []
+
+
+def _parakeet_segments(words: list[dict], fallback_text: str) -> list[dict]:
+    """Group timestamped Parakeet words into readable, timestamped phrases."""
+    if not words:
+        return [{"start": 0.0, "text": fallback_text.strip()}] if fallback_text.strip() else []
+
+    segments = []
+    segment_words = []
+    segment_start = float(words[0].get("start", 0.0))
+
+    def flush():
+        nonlocal segment_words, segment_start
+        if segment_words:
+            text = " ".join(segment_words)
+            text = re.sub(r"\s+([,.!?;:])", r"\1", text).strip()
+            if text:
+                segments.append({"start": segment_start, "text": text})
+        segment_words = []
+
+    for word in words:
+        text = str(word.get("word", "")).strip()
+        if not text:
+            continue
+        start = float(word.get("start", segment_start))
+        if not segment_words:
+            segment_start = start
+        segment_words.append(text)
+        span = float(word.get("end", start)) - segment_start
+        if text.endswith((".", "?", "!")) or span >= 15.0:
+            flush()
+
+    flush()
+    return segments
+
+
+def transcribe_with_parakeet(audio_path: str, config: dict) -> list[dict]:
+    timeout = int(config.get("parakeet_timeout_seconds", 3600))
+    request = json.dumps({"path": audio_path}).encode("utf-8")
+    try:
+        with socket.create_connection(
+            ("127.0.0.1", int(config.get("parakeet_port", 52473))),
+            timeout=2,
+        ) as connection:
+            connection.settimeout(timeout)
+            connection.sendall(request)
+            connection.shutdown(socket.SHUT_WR)
+            chunks = []
+            while chunk := connection.recv(65_536):
+                chunks.append(chunk)
+        result = json.loads(b"".join(chunks))
+        if error := result.get("error"):
+            raise RuntimeError(f"Parakeet service: {error}")
+        return _parakeet_segments(result.get("words", []), result.get("text", ""))
+    except (ConnectionError, OSError, TimeoutError, json.JSONDecodeError):
+        # The menu bar app may still be starting. The CLI path is slower because
+        # it loads the model for this request, but keeps transcription available.
+        pass
+
+    binary = Path(os.path.expanduser(config.get(
+        "parakeet_binary", "~/Applications/EchoPad.app/Contents/MacOS/EchoPad"
+    )))
+    if not binary.exists():
+        raise FileNotFoundError(f"Parakeet helper not found: {binary}")
+
+    completed = subprocess.run(
+        [str(binary), "--parakeet-transcribe", audio_path],
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+    )
+    if completed.returncode != 0:
+        error = completed.stderr.strip().splitlines()
+        raise RuntimeError(error[-1] if error else f"Parakeet exited with {completed.returncode}")
+    result = None
+    for line in reversed(completed.stdout.splitlines()):
+        try:
+            candidate = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(candidate, dict) and ("text" in candidate or "error" in candidate):
+            result = candidate
+            break
+    if result is None:
+        raise RuntimeError("Parakeet returned no JSON result")
+    if error := result.get("error"):
+        raise RuntimeError(f"Parakeet helper: {error}")
+    return _parakeet_segments(result.get("words", []), result.get("text", ""))
+
+
 # ─── Record ──────────────────────────────────────────────────────────────────
 
 
@@ -296,6 +431,7 @@ def record(config: dict, daemon_mode: bool = False):
     # ── System audio (with --pipe for real-time PCM streaming) ──
     sys_proc = None
     sys_buffer = bytearray()
+    sys_errors: list[str] = []
     sys_buf_lock = threading.Lock()
 
     if capture_system:
@@ -334,12 +470,28 @@ def record(config: dict, daemon_mode: bool = False):
         except (IOError, ValueError, AttributeError):
             pass
 
+    def read_sys_errors(proc):
+        """Continuously drain stderr so ScreenCaptureKit cannot block on a full pipe."""
+        try:
+            for raw_line in iter(proc.stderr.readline, b""):
+                line = raw_line.decode(errors="replace").strip()
+                if line:
+                    sys_errors.append(line)
+                    if len(sys_errors) > 50:
+                        del sys_errors[:-50]
+        except (IOError, ValueError, AttributeError):
+            pass
+
     if sys_proc:
         threading.Thread(target=read_sys_pipe, args=(sys_proc,), daemon=True).start()
+        threading.Thread(target=read_sys_errors, args=(sys_proc,), daemon=True).start()
 
     # ── Chunked transcriber ──
-    transcriber = ChunkedTranscriber(config)
-    threading.Thread(target=transcriber.run, daemon=True).start()
+    if config.get("transcription_backend", "parakeet") == "parakeet":
+        transcriber = DeferredTranscriber()
+    else:
+        transcriber = ChunkedTranscriber(config)
+        threading.Thread(target=transcriber.run, daemon=True).start()
 
     # ── whisper-stream (live preview, skipped in daemon mode) ──
     lang = config.get("language") or "auto"
@@ -366,6 +518,7 @@ def record(config: dict, daemon_mode: bool = False):
 
     mic_stream.start()
     start = time.time()
+    set_status("recording", "Nagrywanie", started_at=datetime.now().isoformat(timespec="seconds"))
     stop = False
     last_text = ""
     chunk_index = 0
@@ -491,14 +644,9 @@ def record(config: dict, daemon_mode: bool = False):
                 last_chunk_time = time.time()
             # Monitor system audio process
             if sys_proc and sys_proc.poll() is not None and not stop:
-                stderr_out = ""
-                try:
-                    stderr_out = sys_proc.stderr.read().decode(errors="replace").strip()
-                except Exception:
-                    pass
                 msg = "System audio capture stopped unexpectedly"
-                if stderr_out:
-                    msg += f": {stderr_out}"
+                if sys_errors:
+                    msg += f": {sys_errors[-1]}"
                 print(f"\n  \033[93m!\033[0m {msg}\033[K", flush=True)
                 sys_proc = None
     except KeyboardInterrupt:
@@ -636,11 +784,16 @@ def save_to_obsidian(wav_path: str, segments: list[dict], title: str, duration: 
 
 
 def main():
+    global STATUS_PATH
     config = load_config()
 
     title = None
     daemon_mode = False
-    for i, arg in enumerate(sys.argv[1:], 1):
+    args = sys.argv[1:]
+    title_parts = []
+    i = 0
+    while i < len(args):
+        arg = args[i]
         if arg in ("--pl", "-pl"):
             config["language"] = "pl"
         elif arg in ("--en", "-en"):
@@ -651,9 +804,15 @@ def main():
             config["capture_system_audio"] = False
         elif arg == "--daemon":
             daemon_mode = True
+        elif arg == "--status-file" and i + 1 < len(args):
+            i += 1
+            STATUS_PATH = Path(args[i]).expanduser()
         elif not arg.startswith("-"):
-            title = " ".join(sys.argv[i:])
-            break
+            title_parts.append(arg)
+        i += 1
+
+    if title_parts:
+        title = " ".join(title_parts)
 
     print()
     print("  \033[1m🎙 echopad\033[0m")
@@ -662,6 +821,7 @@ def main():
     print(f"  Language: {lang_display} | Audio: {sys_display}")
 
     wav_path, mic_wav, sys_wav, duration, transcriber = record(config, daemon_mode)
+    set_status("transcribing", "Kończenie transkrypcji")
 
     if not title:
         if daemon_mode:
@@ -670,13 +830,23 @@ def main():
             print()
             title = input("  Meeting title: ").strip() or "Meeting"
 
-    # Wait for chunked transcription to finish (last chunk + queue drain)
-    pending = transcriber.pending
-    if pending > 0:
-        print(f"  \033[93m⟳\033[0m Finishing transcription ({pending} chunk{'s' if pending != 1 else ''} remaining)...")
-    if not transcriber.wait(timeout=300):
-        print("  \033[93m!\033[0m Transcription timed out — transcript may be incomplete.", file=sys.stderr)
-    segments = transcriber.get_segments()
+    if config.get("transcription_backend", "parakeet") == "parakeet":
+        set_status("transcribing", "Transkrypcja Parakeet v3")
+        print("  \033[93m⟳\033[0m Transcribing with Parakeet v3...")
+        try:
+            segments = transcribe_with_parakeet(wav_path, config)
+        except Exception as error:
+            print(f"  \033[93m!\033[0m Parakeet failed ({error}); falling back to Whisper.", file=sys.stderr)
+            result = transcribe_quiet(wav_path, config)
+            segments = result.get("segments", [])
+    else:
+        # Wait for chunked Whisper transcription to finish (last chunk + queue drain)
+        pending = transcriber.pending
+        if pending > 0:
+            print(f"  \033[93m⟳\033[0m Finishing transcription ({pending} chunk{'s' if pending != 1 else ''} remaining)...")
+        if not transcriber.wait(timeout=300):
+            print("  \033[93m!\033[0m Transcription timed out — transcript may be incomplete.", file=sys.stderr)
+        segments = transcriber.get_segments()
 
     # Speaker diarization (optional — requires pyannote.audio + HF token)
     if config.get("diarization", True) and segments:
@@ -690,6 +860,7 @@ def main():
 
                 device = config.get("diarization_device", "mps")
                 print(f"  \033[93m⟳\033[0m Identifying speakers...")
+                set_status("diarizing", "Rozpoznawanie mówców")
                 turns = run_diarize(wav_path, token=token, device=device)
                 segments = assign_speakers(segments, turns, username=USERNAME, mic_wav=mic_wav)
             except ImportError:
@@ -718,6 +889,7 @@ def main():
         else:
             print(f"  \033[90m{ts}\033[0m {seg['text']}")
 
+    set_status("saving", "Zapisywanie do Obsidiana")
     md_path = save_to_obsidian(wav_path, segments, title, duration, config)
 
     if md_path:
@@ -738,8 +910,16 @@ def main():
             subprocess.run(["open", uri], check=False)
             print(f"  \033[92m✓\033[0m Opened in Obsidian")
 
+        set_status("complete", "Zapisano do Obsidiana", note_path=md_path)
+    else:
+        set_status("error", "Nie udało się zapisać transkrypcji")
+
     print()
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as error:
+        set_status("error", f"{type(error).__name__}: {error}")
+        raise

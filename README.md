@@ -1,19 +1,39 @@
 # echopad
 
-Local-first CLI tool for recording meetings with **live transcription** in the terminal. Records microphone + system audio (Zoom, Google Meet, Teams), transcribes using Whisper models running entirely on your Mac, and saves everything to Obsidian.
+Local-first macOS menu bar app and CLI for recording meetings. It records microphone + system audio (Zoom, Google Meet, Teams), transcribes locally with Parakeet v3 or Whisper, and saves everything to Obsidian.
 
 No cloud services. No subscriptions. **Everything runs on-device.**
+
+## Quick install — menu bar app
+
+Requirements: Apple Silicon Mac with macOS 14+, Homebrew, Xcode Command Line Tools, and Obsidian.
+
+```bash
+brew install python ffmpeg whisper-cpp
+git clone https://github.com/pieralukasz/echopad.git
+cd echopad
+
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+
+scripts/build-app.sh --install
+open ~/Applications/EchoPad.app
+```
+
+On first launch, EchoPad asks you to select an Obsidian vault. It then downloads Parakeet v3 once and keeps it loaded while the app is running. Grant Microphone and Screen Recording permissions when macOS asks.
+
+For speaker identification, install the optional dependencies with `.venv/bin/pip install -r requirements-diarization.txt`, then follow the diarization setup below.
 
 ## Privacy
 
 echopad is fully local. Your audio never leaves your computer.
 
-- **Transcription** — runs on Apple Silicon via `mlx-whisper` (no cloud API)
+- **Transcription** — runs on Apple Silicon via FluidAudio/Parakeet v3 or `mlx-whisper` (no cloud API)
 - **Speaker diarization** — runs on Apple Silicon via `pyannote.audio` (no cloud API)
 - **Audio capture** — macOS ScreenCaptureKit (system API, no third-party drivers)
 - **Storage** — audio + transcripts saved to your local Obsidian vault
 
-The only network request is a **one-time model download** (~1.5 GB for Whisper, ~300 MB for pyannote) from HuggingFace on first run. After that, echopad works fully offline.
+The only network request is a **one-time model download** (~470 MB for Parakeet v3, ~1.5 GB for Whisper, ~300 MB for pyannote) on first run. After that, echopad works fully offline.
 
 ## Demo
 
@@ -46,11 +66,13 @@ The only network request is a **one-time model download** (~1.5 GB for Whisper, 
 
 ## Features
 
-- **Real-time chunked transcription** — transcribes in 30-second chunks during recording, near-zero wait after you stop
+- **Native menu bar app** — click the waveform icon or use Cmd+Shift+E from any app
+- **Fast Polish transcription** — Parakeet v3 stays loaded in the menu app and uses Apple Silicon acceleration
+- **Whisper fallback** — switch to Large v3 Turbo or Small from the menu
 - **System audio capture** — records remote participants (Zoom/Meet/Teams) via ScreenCaptureKit, no virtual audio drivers needed
 - **Speaker diarization** — identifies individual speakers using pyannote.audio, labels your voice with your username
 - **Live preview** — see approximate transcription in the terminal while recording
-- **Global hotkey** — Ctrl+Shift+E to start/stop recording from any app (daemon mode)
+- **Global hotkey** — Cmd+Shift+E to start/stop recording from any app (daemon mode)
 - **Filler filtering** — automatically removes runs of "yeah", "okay", "mhm" filler sequences
 - **Hallucination filter** — filters out common Whisper artifacts on silence
 - **Obsidian integration** — saves markdown transcript + WAV audio to your vault
@@ -59,7 +81,7 @@ The only network request is a **one-time model download** (~1.5 GB for Whisper, 
 
 ## Requirements
 
-- **macOS 15+** (Sequoia) on Apple Silicon (M1/M2/M3/M4)
+- **macOS 14+** on Apple Silicon
 - **Xcode Command Line Tools** (for compiling Swift tools)
 - **Homebrew** packages
 - **Python 3.11+** with specific packages
@@ -78,7 +100,8 @@ brew install whisper-cpp ffmpeg
 ### 2. Install Python dependencies
 
 ```bash
-pip3 install --break-system-packages mlx-whisper sounddevice soundfile numpy pyannote.audio
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
 ```
 
 | Package | Purpose |
@@ -110,19 +133,22 @@ The `mlx-community/whisper-large-v3-turbo` model (~1.5 GB) will be downloaded au
 git clone https://github.com/pieralukasz/echopad.git
 cd echopad
 
-# Compile Swift tools
-swiftc -O -o audio-capture audio-capture.swift \
-  -framework ScreenCaptureKit -framework CoreMedia -framework AVFoundation
-
-swiftc -O -o echopad-hotkey echopad-hotkey.swift \
-  -framework Cocoa -framework Carbon
-
-# Compile mic-monitor (needed for watcher mode only)
-swiftc -O -o mic-monitor mic-monitor.swift \
-  -framework CoreAudio -framework AudioToolbox
+# The native app build compiles audio-capture automatically.
+scripts/build-app.sh --install
 ```
 
-### 5. Add to PATH
+### 5. Build the native menu bar app
+
+The build downloads and pins FluidAudio, embeds the Parakeet runtime, signs the app locally, and installs it in `~/Applications`:
+
+```bash
+scripts/build-app.sh --install
+open ~/Applications/EchoPad.app
+```
+
+On its first launch EchoPad downloads Parakeet v3. Keep the app running in the menu bar so the model remains warm; subsequent transcriptions start immediately. The app also creates `~/Library/LaunchAgents/com.echopad.app.plist` so it starts after login.
+
+### 6. Add to PATH
 
 ```bash
 ln -sf "$(pwd)/echopad.py" ~/.local/bin/echopad
@@ -131,7 +157,7 @@ ln -sf "$(pwd)/echopad.py" ~/.local/bin/echopad
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
-### 6. Set up speaker diarization (free, optional)
+### 7. Set up speaker diarization (free, optional)
 
 Speaker diarization identifies **who said what** in your meetings. The pyannote model is free but requires a HuggingFace account to accept the license terms.
 
@@ -150,14 +176,21 @@ The model (~300 MB) downloads once on first use and then runs **entirely on your
 
 Without this step, echopad still works — you just won't get speaker labels in the transcript.
 
-### 7. Configure (optional)
+### 8. Configure (optional)
 
-Copy and edit `config.json`:
+The app creates `config.json` after you choose a vault. To configure it manually, start from the safe example:
+
+```bash
+cp config.example.json config.json
+```
+
+Available settings:
 
 ```json
 {
   "vault_path": "~/path/to/your/obsidian/vault",
   "meetings_dir": "Meetings",
+  "transcription_backend": "parakeet",
   "model": "mlx-community/whisper-large-v3-turbo",
   "sample_rate": 16000,
   "language": null,
@@ -173,6 +206,7 @@ Copy and edit `config.json`:
 |---------|-------------|---------|
 | `vault_path` | Path to your Obsidian vault | iCloud Obsidian path |
 | `meetings_dir` | Folder for transcripts inside vault | `Meetings` |
+| `transcription_backend` | Final transcription engine: `parakeet` or `whisper` | `parakeet` |
 | `model` | MLX Whisper model for final transcription | `mlx-community/whisper-large-v3-turbo` |
 | `sample_rate` | Audio sample rate in Hz | `16000` |
 | `language` | Force language (`pl`, `en`) or `null` for auto | `null` |
@@ -183,6 +217,15 @@ Copy and edit `config.json`:
 | `hf_token` | HuggingFace token for pyannote model | `null` |
 
 ## Usage
+
+### Menu bar app (recommended)
+
+- Click the waveform icon and choose **Rozpocznij nagrywanie**, or press **Cmd+Shift+E**.
+- Press **Cmd+Shift+E** again to stop. The icon shows transcription, diarization, and saving progress.
+- Choose **Nagraj z tytułem…** when you want to name the Obsidian note first.
+- Choose **Vault: …** at any time to select a different Obsidian vault. New notes and audio will be saved there immediately; no restart is needed.
+- Keep **Parakeet v3 — bardzo szybki** selected for fast Polish transcription.
+- Enable **Rozpoznawaj mówców (wolniej)** only when speaker labels are worth the additional wait.
 
 ### Interactive mode (CLI)
 
@@ -197,9 +240,9 @@ echopad --pl --no-system "Standup"   # combine flags
 
 Press **Enter** to stop recording.
 
-### Daemon mode (keyboard shortcut)
+### Legacy hotkey daemon
 
-Start/stop recording with a global hotkey (**Ctrl+Shift+E**) from any app, including Brave and other Chromium browsers.
+The standalone hotkey daemon below is retained for older installations. New installations should use the menu bar app, which registers the shortcut without an Accessibility event tap.
 
 #### Setup
 
@@ -278,11 +321,11 @@ EOF
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.echopad.hotkey.plist
 ```
 
-4. **Test**: Press **Ctrl+Shift+E** — you should get a notification "Recording: [tab title]". Press again to stop.
+4. **Test**: Press **Cmd+Shift+E** — you should get a notification "Recording: [tab title]". Press again to stop.
 
 #### How it works
 
-- `echopad-hotkey` — Swift binary that registers a global CGEvent tap for Ctrl+Shift+E
+- `echopad-hotkey` — Swift binary that registers a global CGEvent tap for Cmd+Shift+E
 - `echopad-toggle` — Shell script that starts/stops echopad via PID file
 - On start: gets the active browser tab title, launches `echopad.py --daemon`
 - On stop: sends SIGTERM, echopad transcribes and saves to Obsidian
@@ -300,20 +343,20 @@ Grant all in **System Settings > Privacy & Security**.
 
 ## How it works
 
-During recording, four processes run in parallel:
+With the default Parakeet backend:
 
 ```
 sounddevice      -->  mic buffer     (your microphone)
 audio-capture    -->  sys.wav + pipe (system audio: Zoom/Meet/Teams)
-whisper-stream   -->  terminal       (live preview, medium model)
-ChunkedTranscriber    <-- mixed chunks every 30s --> mlx-whisper (large-v3-turbo)
+final mixed WAV  -->  menu app       (resident FluidAudio/Parakeet v3)
+                                      --> Obsidian note
 ```
 
-Every 30 seconds, mic and system audio are mixed into a chunk and transcribed by `mlx-whisper` in a background thread. This spreads the CPU load over the entire recording instead of spiking at the end.
+The menu app loads Parakeet once and exposes it only on localhost. The Python recorder sends the final WAV to that resident process, avoiding model startup cost for every note. If the service is unavailable, EchoPad starts its bundled Parakeet helper as a fallback. The Whisper backend retains chunked transcription and terminal live preview.
 
 After you stop:
 
-1. Final audio chunk is submitted and transcribed (seconds, not minutes)
+1. Mic and system audio are merged and transcribed locally
 2. `ffmpeg` merges mic + system into one WAV for archival/playback
 3. `pyannote.audio` runs speaker diarization on the mixed audio (optional, ~3-5 min for 1h meeting)
 4. Speaker labels mapped to transcription segments, local user identified via mic energy correlation
@@ -360,12 +403,14 @@ echopad.py               CLI entry point (Python)
   |- sounddevice          Microphone recording -> mic buffer
   |- audio-capture        System audio (Swift/ScreenCaptureKit) -> sys.wav + stdout pipe
   |- whisper-stream       Live preview (whisper.cpp, medium model)
-  |- ChunkedTranscriber   Real-time 30s chunk transcription (mlx-whisper, large-v3-turbo)
+  |- Parakeet client      Resident FluidAudio service, with CLI fallback
+  |- ChunkedTranscriber   Optional MLX Whisper backend
   |- ffmpeg               Audio merge (mic + system -> meeting.wav)
   |- diarize.py           Speaker diarization (pyannote.audio)
   '- obsidian://          Opens transcript in Obsidian
 
 audio-capture.swift       ScreenCaptureKit CLI
+macos/EchoPadApp.swift    Native menu bar app, hotkey, status UI, Parakeet service
 echopad-hotkey.swift      Global hotkey daemon (CGEvent tap)
 echopad-toggle            Shell script for daemon start/stop
 diarize.py                Speaker diarization module
@@ -391,7 +436,7 @@ Grant **Screen Recording** permission to your terminal app in System Settings > 
 Models download on first use: `large-v3-turbo` (~1.5 GB) and `pyannote/speaker-diarization-3.1` (~300 MB). After that, everything is cached locally.
 
 **Diarization skipped**
-Set `hf_token` in `config.json`. See [Set up speaker diarization](#6-set-up-speaker-diarization-free-optional).
+Set `hf_token` in `config.json`. See [Set up speaker diarization](#7-set-up-speaker-diarization-free-optional).
 
 **"Could not use mps" warning**
 Some PyTorch operations may not be supported on MPS yet. echopad falls back to CPU automatically. CPU diarization is slower (~10-15 min for 1h meeting) but works.

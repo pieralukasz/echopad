@@ -5,4 +5,8 @@ EchopadHotkey.app/
 __pycache__/
 *.pyc
 icon.png
+.DS_Store
+.build/
+build/
+.venv/
 config.json

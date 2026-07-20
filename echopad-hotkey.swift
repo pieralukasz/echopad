@@ -1,6 +1,6 @@
 /**
  echopad-hotkey — Global keyboard shortcut to toggle echopad recording.
- Registers Ctrl+Shift+E as a system-wide hotkey via CGEvent tap.
+ Registers Cmd+Shift+E as a system-wide hotkey via CGEvent tap.
  Runs echopad-toggle when pressed, works in ALL apps including Brave.
 
  Requires Accessibility permission:
@@ -38,9 +38,9 @@ let callback: CGEventTapCallBack = { _, type, event, _ -> Unmanaged<CGEvent>? in
         let flags = event.flags
 
         if keyCode == hotKeyCode
-            && flags.contains(.maskControl)
+            && flags.contains(.maskCommand)
             && flags.contains(.maskShift)
-            && !flags.contains(.maskCommand)
+            && !flags.contains(.maskControl)
             && !flags.contains(.maskAlternate) {
             handleHotKey()
             return nil  // consume the event
@@ -77,6 +77,6 @@ let runLoopSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
 CFRunLoopAddSource(CFRunLoopGetCurrent(), runLoopSource, .commonModes)
 CGEvent.tapEnable(tap: tap, enable: true)
 
-fputs("echopad-hotkey: listening for Ctrl+Shift+E (PID \(ProcessInfo.processInfo.processIdentifier))\n", stderr)
+fputs("echopad-hotkey: listening for Cmd+Shift+E (PID \(ProcessInfo.processInfo.processIdentifier))\n", stderr)
 
 CFRunLoopRun()
