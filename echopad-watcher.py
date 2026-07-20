@@ -333,20 +333,17 @@ def main():
         while True:
             time.sleep(MEETING_CHECK_INTERVAL)
 
-            # Check for echopad crash
+            # Check for echopad exit
             if state == "RECORDING" and echopad_proc and echopad_proc.poll() is not None:
                 exit_code = echopad_proc.returncode
-                log.warning("echopad exited unexpectedly (code %d)", exit_code)
                 echopad_proc = None
                 state = "IDLE"
                 inactive_streak = 0
-                # If meeting is still active, restart recording immediately
-                if is_meeting_still_active() or is_tab_still_open(recording_tab_url):
-                    log.info("Meeting still active after crash, restarting recording")
-                    on_mic_on()
+                cooldown_until = time.time() + COOLDOWN_SECONDS
+                if exit_code == 0:
+                    log.info("echopad finished normally (code 0), cooldown %ds", COOLDOWN_SECONDS)
                 else:
-                    cooldown_until = time.time() + COOLDOWN_SECONDS
-                    log.info("State -> IDLE (echopad crashed, cooldown %ds)", COOLDOWN_SECONDS)
+                    log.warning("echopad exited unexpectedly (code %d), cooldown %ds", exit_code, COOLDOWN_SECONDS)
                 continue
 
             # Check if meeting is still active (require 2 consecutive checks)

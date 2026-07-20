@@ -87,23 +87,32 @@ return ""
     echo "Meeting"
 }
 
+# ── Helper: find all echopad.py PIDs (excluding ourselves) ──
+
+find_echopad_pids() {
+    pgrep -f "echopad.py" 2>/dev/null | while read -r p; do
+        [ "$p" != "$$" ] && echo "$p"
+    done || true
+}
+
 # ── Toggle logic ──
 
-if [ -f "$PID_FILE" ]; then
-    PID=$(cat "$PID_FILE")
-    if kill -0 "$PID" 2>/dev/null; then
-        # Currently recording → stop
+RUNNING_PIDS=$(find_echopad_pids)
+
+if [ -n "$RUNNING_PIDS" ]; then
+    # Currently recording → stop ALL echopad processes
+    for PID in $RUNNING_PIDS; do
         kill -TERM "$PID" 2>/dev/null || true
-        rm -f "$PID_FILE"
-        notify "echopad" "Stopped. Transcribing..."
-        log "Stopped recording (PID $PID)"
-        exit 0
-    else
-        # Stale PID file → clean up, fall through to start
-        rm -f "$PID_FILE"
-        log "Cleaned stale PID file (PID $PID)"
-    fi
+        log "Sent SIGTERM to echopad (PID $PID)"
+    done
+    rm -f "$PID_FILE"
+    notify "echopad" "Stopped. Transcribing..."
+    log "Stopped recording (all instances)"
+    exit 0
 fi
+
+# Also clean stale PID file if no processes found
+rm -f "$PID_FILE"
 
 # Not recording → start
 TITLE=$(get_title)

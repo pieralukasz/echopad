@@ -1,9 +1,0 @@
-{
-  "vault_path": "~/Documents/Obsidian/Vault",
-  "meetings_dir": "Meetings",
-  "model": "mlx-community/whisper-large-v3-turbo",
-  "sample_rate": 16000,
-  "language": null,
-  "open_in_obsidian": true,
-  "capture_system_audio": true
-}
