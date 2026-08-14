@@ -20,7 +20,7 @@ scripts/build-app.sh --install
 open ~/Applications/EchoPad.app
 ```
 
-On first launch, EchoPad asks you to select an Obsidian vault. It then downloads Parakeet v3 once and keeps it loaded while the app is running. Grant Microphone and Screen Recording permissions when macOS asks.
+On first launch, EchoPad asks you to select an Obsidian vault. It then downloads Parakeet v3 once and keeps it loaded while the app is running. Grant Microphone and Screen & System Audio Recording permissions when macOS asks. The menu bar app checks the system-audio permission before starting, so it will not silently record only the microphone.
 
 For speaker identification, install the optional dependencies with `.venv/bin/pip install -r requirements-diarization.txt`, then follow the diarization setup below.
 
@@ -336,7 +336,7 @@ launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.echopad.hotkey.plist
 On first run, macOS will ask for:
 
 1. **Microphone access** — for recording your voice
-2. **Screen Recording** — for capturing system audio via ScreenCaptureKit
+2. **Screen & System Audio Recording** — for capturing system audio via ScreenCaptureKit
 3. **Accessibility** — for the global hotkey (daemon mode only)
 
 Grant all in **System Settings > Privacy & Security**.
@@ -347,7 +347,7 @@ With the default Parakeet backend:
 
 ```
 sounddevice      -->  mic buffer     (your microphone)
-audio-capture    -->  sys.wav + pipe (system audio: Zoom/Meet/Teams)
+EchoPad.app      -->  sys.wav + pipe (system audio: Zoom/Meet/Teams)
 final mixed WAV  -->  menu app       (resident FluidAudio/Parakeet v3)
                                       --> Obsidian note
 ```
@@ -401,7 +401,7 @@ audio: "[[attachments/meetings/2026-03-28 14.00 - Sprint Planning.wav]]"
 ```
 echopad.py               CLI entry point (Python)
   |- sounddevice          Microphone recording -> mic buffer
-  |- audio-capture        System audio (Swift/ScreenCaptureKit) -> sys.wav + stdout pipe
+  |- EchoPad executable   System audio (Swift/ScreenCaptureKit) -> sys.wav + stdout pipe
   |- whisper-stream       Live preview (whisper.cpp, medium model)
   |- Parakeet client      Resident FluidAudio service, with CLI fallback
   |- ChunkedTranscriber   Optional MLX Whisper backend
@@ -427,7 +427,9 @@ Check `~/Library/Logs/echopad-hotkey.log`. If it says "Failed to create event ta
 Whisper hallucinates on silence. The hallucination filter catches most cases. Specify a language explicitly to reduce this: `echopad --en` or `echopad --pl`.
 
 **No system audio captured**
-Grant **Screen Recording** permission to your terminal app in System Settings > Privacy & Security > Screen Recording.
+For the native app, grant **Screen & System Audio Recording** permission to **EchoPad** in System Settings > Privacy & Security. Quit and reopen EchoPad after changing the permission. EchoPad uses its own signed executable for system-audio capture, so the permission belongs to the menu bar app.
+
+For direct CLI use, grant the same permission to your terminal app. Rebuilding an ad-hoc signed local app can make macOS request permission again.
 
 **whisper-stream not found**
 `brew install whisper-cpp`

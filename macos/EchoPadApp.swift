@@ -1,5 +1,6 @@
 import AppKit
 import Carbon.HIToolbox
+import CoreGraphics
 import Darwin
 import Foundation
 import FluidAudio
@@ -298,6 +299,9 @@ private final class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sen
             showError("Nie znaleziono silnika", "Spodziewałem się \(engineURL.path) oraz \(pythonURL.path).")
             return
         }
+        if configStore.value(for: "capture_system_audio", fallback: true), !ensureScreenCaptureAccess() {
+            return
+        }
 
         try? fileManager.removeItem(at: statusURL)
         if !fileManager.fileExists(atPath: logURL.path) {
@@ -316,6 +320,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sen
             environment["HOME"] = home.path
             environment["PATH"] = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
             environment["PYTHONUNBUFFERED"] = "1"
+            environment["ECHOPAD_AUDIO_CAPTURE_BIN"] = Bundle.main.executableURL?.path
             process.environment = environment
             process.standardOutput = handle
             process.standardError = handle
@@ -335,6 +340,17 @@ private final class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sen
             showError("Nie udało się rozpocząć nagrywania", error.localizedDescription)
             apply(state: .error, message: "Błąd uruchamiania")
         }
+    }
+
+    private func ensureScreenCaptureAccess() -> Bool {
+        if CGPreflightScreenCaptureAccess() { return true }
+        if CGRequestScreenCaptureAccess() { return true }
+
+        showError(
+            "Brak dostępu do dźwięku systemowego",
+            "Włącz EchoPad w Ustawienia systemowe → Prywatność i ochrona → Nagrywanie ekranu i dźwięku systemowego, a następnie uruchom EchoPad ponownie. Nagrywanie nie zostało rozpoczęte."
+        )
+        return false
     }
 
     private func stopEngine(pid: pid_t) {
@@ -685,7 +701,7 @@ private func runHealthCheck() -> Never {
     let checks: [String: Bool] = [
         "python": FileManager.default.isExecutableFile(atPath: pythonPath),
         "engine": FileManager.default.fileExists(atPath: project.appendingPathComponent("echopad.py").path),
-        "audioCapture": FileManager.default.isExecutableFile(atPath: project.appendingPathComponent("audio-capture").path),
+        "audioCapture": Bundle.main.executableURL.map { FileManager.default.isExecutableFile(atPath: $0.path) } ?? false,
         "config": FileManager.default.fileExists(atPath: project.appendingPathComponent("config.json").path),
     ]
     let data = try? JSONSerialization.data(withJSONObject: checks, options: [.prettyPrinted, .sortedKeys])
@@ -813,19 +829,29 @@ private func runParakeetCommand(audioPath: String?) -> Never {
     dispatchMain()
 }
 
-if CommandLine.arguments.contains("--health-check") {
-    runHealthCheck()
-}
+@main
+@MainActor
+private enum EchoPadMain {
+    static func main() {
+        if CommandLine.arguments.contains("--health-check") {
+            runHealthCheck()
+        }
 
-if CommandLine.arguments.contains("--download-parakeet") {
-    runParakeetCommand(audioPath: nil)
-}
+        if CommandLine.arguments.contains("--download-parakeet") {
+            runParakeetCommand(audioPath: nil)
+        }
 
-if let index = CommandLine.arguments.firstIndex(of: "--parakeet-transcribe"), index + 1 < CommandLine.arguments.count {
-    runParakeetCommand(audioPath: CommandLine.arguments[index + 1])
-}
+        if let index = CommandLine.arguments.firstIndex(of: "--parakeet-transcribe"), index + 1 < CommandLine.arguments.count {
+            runParakeetCommand(audioPath: CommandLine.arguments[index + 1])
+        }
 
-private let application = NSApplication.shared
-private let delegate = AppDelegate()
-application.delegate = delegate
-application.run()
+        if CommandLine.arguments.contains("--audio-capture") {
+            runSystemAudioCaptureCommand(arguments: CommandLine.arguments)
+        }
+
+        let application = NSApplication.shared
+        let delegate = AppDelegate()
+        application.delegate = delegate
+        application.run()
+    }
+}

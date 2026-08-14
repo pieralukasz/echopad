@@ -6,6 +6,7 @@ import json
 import os
 import queue
 import re
+import select
 import shutil
 import signal
 import socket
@@ -25,7 +26,9 @@ import soundfile as sf
 
 PROJECT_DIR = Path(__file__).resolve().parent
 CONFIG_PATH = PROJECT_DIR / "config.json"
-AUDIO_CAPTURE_BIN = PROJECT_DIR / "audio-capture"
+AUDIO_CAPTURE_BIN = Path(
+    os.environ.get("ECHOPAD_AUDIO_CAPTURE_BIN", PROJECT_DIR / "audio-capture")
+).expanduser()
 WHISPER_STREAM_BIN = "/opt/homebrew/bin/whisper-stream"
 STREAM_MODEL = Path.home() / ".config/open-wispr/models/ggml-medium.bin"
 USERNAME = os.environ.get("USER", "user")
@@ -439,24 +442,36 @@ def record(config: dict, daemon_mode: bool = False):
             print(f"  \033[93m!\033[0m audio-capture binary not found at {AUDIO_CAPTURE_BIN}. Skipping system audio.", file=sys.stderr)
             capture_system = False
         else:
+            audio_capture_mode = ["--audio-capture"] if os.environ.get("ECHOPAD_AUDIO_CAPTURE_BIN") else []
             sys_proc = subprocess.Popen(
-                [str(AUDIO_CAPTURE_BIN), "--output", sys_wav, "--sample-rate", str(sample_rate),
+                [str(AUDIO_CAPTURE_BIN), *audio_capture_mode,
+                 "--output", sys_wav, "--sample-rate", str(sample_rate),
                  "--no-mic", "--pipe"],
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             )
-            time.sleep(0.5)
-            if sys_proc.poll() is not None:
-                stderr_out = ""
-                try:
-                    stderr_out = sys_proc.stderr.read().decode(errors="replace").strip()
-                except Exception:
-                    pass
-                msg = "audio-capture crashed on start"
-                if stderr_out:
-                    msg += f": {stderr_out}"
+            ready_streams, _, _ = select.select([sys_proc.stderr], [], [], 5)
+            startup_line = ""
+            if ready_streams:
+                startup_line = sys_proc.stderr.readline().decode(errors="replace").strip()
+            capture_ready = "recording started" in startup_line.lower()
+            if not capture_ready:
+                if sys_proc.poll() is None:
+                    sys_proc.terminate()
+                    try:
+                        sys_proc.wait(timeout=2)
+                    except subprocess.TimeoutExpired:
+                        sys_proc.kill()
+                        sys_proc.wait()
+                msg = "audio-capture did not become ready"
+                if startup_line:
+                    msg += f": {startup_line}"
+                else:
+                    msg += " within 5 seconds"
                 print(f"  \033[93m!\033[0m {msg}. Recording mic only.", file=sys.stderr)
                 sys_proc = None
                 capture_system = False
+            else:
+                print("  \033[92m✓\033[0m System audio capture ready")
 
     # ── Thread: read system audio PCM from pipe ──
     def read_sys_pipe(proc):
