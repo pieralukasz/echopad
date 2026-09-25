@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" fill="#1F5FD1">
+<g transform="translate(14,-48)">
+  <!-- Waveform inside the front bubble. -->
+  <rect x="300" y="420" width="30" height="70" rx="15"/>
+  <rect x="360" y="385" width="30" height="140" rx="15"/>
+  <rect x="420" y="400" width="30" height="110" rx="15"/>
+  <rect x="480" y="370" width="30" height="170" rx="15"/>
+  <rect x="540" y="425" width="30" height="60" rx="15"/>
+</g>
+</svg>

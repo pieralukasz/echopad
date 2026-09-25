@@ -1,0 +1,265 @@
+import AppKit
+import Foundation
+import ScribeKit
+import SystemAudioKit
+
+/// Runs a recording from start to saved files: capture with SystemAudioKit, transcribe
+/// with ScribeKit, then export to the chosen destination and run its after-save actions.
+@MainActor
+public final class RecordingController {
+    /// Seconds of silent system audio during a detected call before the UI warns about it.
+    static let SILENT_SYSTEM_WARNING: TimeInterval = 20
+    /// Shorter recordings are treated as accidental and discarded.
+    static let MINIMUM_DURATION: TimeInterval = 1.5
+
+    private let appState: AppState
+    private let library: ConversationLibrary
+    private let recorder = AudioRecorder()
+    private let scribe: Scribe
+    public var settings: Settings
+    public var sounds: SoundPlayer?
+    public var onSaved: ((Conversation) -> Void)?
+    public var onError: ((String) -> Void)?
+    /// Asked for a title when a recording stops and `asksForTitle` is on; nil keeps the current title.
+    public var askForTitle: ((String) async -> String?)?
+
+    private var currentID: UUID?
+    private var startDate: Date?
+    private var meetingBundleID: String?
+    private var silenceTimer: Timer?
+    private var silentSince: Date?
+
+    public init(appState: AppState, library: ConversationLibrary, settings: Settings, scribe: Scribe = .shared) {
+        self.appState = appState
+        self.library = library
+        self.settings = settings
+        self.scribe = scribe
+        recorder.onLevels = { [weak appState] mic, system in
+            Task { @MainActor in appState?.push(microphone: mic, system: system) }
+        }
+    }
+
+    // MARK: - Start and stop
+
+    public func toggle() {
+        if appState.phase.isRecording {
+            Task { await stop() }
+        } else if !appState.phase.isBusy {
+            Task { await start() }
+        }
+    }
+
+    /// Starts recording. `meeting` is the call app when the recording starts from a meeting
+    /// notification; with the "only the meeting app" setting, just that app is recorded.
+    public func start(title: String? = nil, meeting: DetectedMeeting? = nil, destinationID: UUID? = nil) async {
+        guard !appState.phase.isBusy else { return }
+        let id = UUID()
+        let folder = library.folder(for: id)
+        let date = Date()
+        meetingBundleID = meeting?.bundleID
+
+        do {
+            try await recorder.start(configuration(for: meeting), in: folder)
+        } catch {
+            try? FileManager.default.removeItem(at: folder)
+            fail(Self.describe(error))
+            return
+        }
+
+        currentID = id
+        startDate = date
+        appState.currentTitle = title ?? defaultTitle(meeting: meeting, date: date)
+        appState.currentApp = meeting?.appName
+        appState.currentDestinationID = destinationID ?? settings.defaultDestinationID
+        appState.systemAudioLooksSilent = false
+        appState.transition(to: .recording(since: date))
+        sounds?.play(.start)
+        watchSystemAudio()
+    }
+
+    /// Stops recording. With `transcribe: false` (used on quit) the audio is kept and
+    /// transcribed on the next launch.
+    public func stop(transcribe: Bool = true) async {
+        guard appState.phase.isRecording, let id = currentID, let startDate else { return }
+        silenceTimer?.invalidate()
+        silenceTimer = nil
+        appState.transition(to: .processing(.finishingAudio))
+        sounds?.play(.stop)
+
+        guard let recording = await recorder.stop() else {
+            fail("The recording could not be finished.")
+            return
+        }
+        currentID = nil
+        self.startDate = nil
+
+        if recording.duration < Self.MINIMUM_DURATION {
+            try? FileManager.default.removeItem(at: library.folder(for: id))
+            appState.transition(to: .idle)
+            return
+        }
+
+        var title = appState.currentTitle
+        if transcribe, settings.asksForTitle, let ask = askForTitle, let chosen = await ask(title) {
+            title = chosen.isEmpty ? title : chosen
+        }
+
+        var conversation = Conversation(id: id, title: title, date: startDate, duration: recording.duration,
+                                        app: appState.currentApp, destinationID: appState.currentDestinationID)
+        conversation.status = transcribe ? .transcribing : .recorded
+        library.add(conversation)
+        guard transcribe else {
+            appState.transition(to: .idle)
+            return
+        }
+        await process(id)
+    }
+
+    /// Stops and throws the recording away.
+    public func discard() async {
+        guard appState.phase.isRecording, let id = currentID else { return }
+        silenceTimer?.invalidate()
+        _ = await recorder.stop()
+        try? FileManager.default.removeItem(at: library.folder(for: id))
+        currentID = nil
+        startDate = nil
+        appState.transition(to: .idle)
+    }
+
+    /// Stops a recording because the call ended, if it was started for that call.
+    public func meetingEnded(_ meeting: DetectedMeeting) {
+        guard appState.phase.isRecording, meetingBundleID == meeting.bundleID else { return }
+        Task { await stop() }
+    }
+
+    // MARK: - Processing
+
+    /// Transcribes and exports a conversation already in the library. Used after a
+    /// recording and for "Transcribe Again".
+    public func process(_ id: UUID) async {
+        guard var conversation = library.conversation(id: id) else { return }
+        let tracks = library.tracks(for: id)
+        guard tracks.microphone != nil || tracks.system != nil else {
+            fail("The audio of this conversation is no longer kept, so it cannot be transcribed again.")
+            return
+        }
+        library.update(id) { $0.status = .transcribing }
+        appState.transition(to: .processing(.transcribing))
+
+        let options = TranscriptionOptions(
+            language: settings.language == "auto" ? nil : settings.language,
+            diarize: settings.identifySpeakers,
+            localSpeakerName: settings.myName.isEmpty ? "Me" : settings.myName
+        )
+
+        do {
+            let appState = self.appState
+            let transcript = try await scribe.transcribeConversation(
+                microphone: tracks.microphone, system: tracks.system, options: options,
+                progress: { stage in
+                    Task { @MainActor in
+                        switch stage {
+                        case .identifyingSpeakers: appState.transition(to: .processing(.identifyingSpeakers))
+                        case .finishing: appState.transition(to: .processing(.saving))
+                        default: break
+                        }
+                    }
+                })
+            try library.store(transcript, for: id)
+            conversation = library.conversation(id: id) ?? conversation
+            try export(conversation, transcript: transcript)
+        } catch {
+            let message = Self.describe(error)
+            library.update(id) { $0.status = .failed(message) }
+            fail(message)
+            return
+        }
+        library.enforceAudioLimit(settings.libraryLimit)
+    }
+
+    /// Writes the stored transcript again (for example after renaming speakers or
+    /// choosing another destination) and runs the destination's after-save actions.
+    public func export(_ conversation: Conversation, transcript: Transcript, runActions: Bool = true) throws {
+        appState.transition(to: .processing(.saving))
+        let destination = settings.destination(id: conversation.destinationID)
+        let tracks = library.tracks(for: conversation.id)
+        let result = try Exporter().export(conversation, transcript: transcript,
+                                           tracks: [tracks.microphone, tracks.system].compactMap { $0 },
+                                           to: destination)
+        library.update(conversation.id) {
+            $0.status = .done
+            $0.wordCount = transcript.wordCount
+            $0.speakers = transcript.speakers
+            $0.language = transcript.language
+            $0.exportedFiles = result.files.map(\.path)
+            $0.exportedAudio = result.audio?.path
+        }
+        appState.transition(to: .saved(title: conversation.title), resetAfter: 2.5)
+        sounds?.play(.saved)
+        if runActions { AfterSave.run(destination.afterSave, result: result, transcript: transcript, destination: destination) }
+        if let saved = library.conversation(id: conversation.id) { onSaved?(saved) }
+    }
+
+    // MARK: - Helpers
+
+    private func configuration(for meeting: DetectedMeeting?) -> AudioRecorder.Configuration {
+        var configuration = AudioRecorder.Configuration()
+        configuration.backend = SystemAudioBackend(rawValue: settings.systemAudioBackend) ?? .processTap
+        if settings.recordsMicrophone {
+            configuration.microphone = settings.microphoneUID.map { .device(uid: $0) } ?? .systemDefault
+        } else {
+            configuration.microphone = nil
+        }
+        switch settings.systemAudio {
+        case .off: configuration.systemAudio = nil
+        case .everything: configuration.systemAudio = .everything
+        case .meetingApp: configuration.systemAudio = meeting.map { .apps([$0.bundleID]) } ?? .everything
+        case .selectedApps:
+            configuration.systemAudio = settings.systemAudioApps.isEmpty ? .everything : .apps(settings.systemAudioApps)
+        }
+        // App isolation needs a process tap; ScreenCaptureKit always records everything.
+        if configuration.backend == .screenCaptureKit, case .apps = configuration.systemAudio {
+            configuration.systemAudio = .everything
+        }
+        return configuration
+    }
+
+    private func defaultTitle(meeting: DetectedMeeting?, date: Date) -> String {
+        if let meeting { return "\(meeting.appName) call" }
+        let hour = Calendar.current.component(.hour, from: date)
+        let part = hour < 12 ? "Morning" : hour < 18 ? "Afternoon" : "Evening"
+        return "\(part) conversation"
+    }
+
+    /// Warns when a call is being recorded but the system track stays silent, which usually
+    /// means the system audio permission was not granted.
+    private func watchSystemAudio() {
+        silentSince = nil
+        guard settings.systemAudio != .off else { return }
+        silenceTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                let peak = self.recorder.systemAudioPeak() ?? 0
+                if peak > 0.02 {
+                    self.silentSince = nil
+                    self.appState.systemAudioLooksSilent = false
+                } else if self.meetingBundleID != nil || self.appState.detectedMeeting != nil {
+                    let since = self.silentSince ?? Date()
+                    self.silentSince = since
+                    self.appState.systemAudioLooksSilent = Date().timeIntervalSince(since) > Self.SILENT_SYSTEM_WARNING
+                }
+            }
+        }
+    }
+
+    private func fail(_ message: String) {
+        appState.transition(to: .error(message), resetAfter: 6)
+        sounds?.play(.error)
+        onError?(message)
+    }
+
+    static func describe(_ error: Error) -> String {
+        if let error = error as? LocalizedError, let description = error.errorDescription { return description }
+        return error.localizedDescription
+    }
+}

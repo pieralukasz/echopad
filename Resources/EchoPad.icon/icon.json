@@ -1,0 +1,67 @@
+{
+  "fill": {
+    "linear-gradient": [
+      "srgb:0.30980,0.76471,0.96863,1.00000",
+      "srgb:0.12157,0.37255,0.81961,1.00000"
+    ],
+    "orientation": {
+      "start": {
+        "x": 0.2,
+        "y": 0.0
+      },
+      "stop": {
+        "x": 0.8,
+        "y": 1.0
+      }
+    }
+  },
+  "groups": [
+    {
+      "name": "other",
+      "layers": [
+        {
+          "image-name": "back.svg",
+          "name": "back",
+          "glass": true,
+          "opacity": 0.6
+        }
+      ],
+      "specular": true,
+      "shadow": {
+        "kind": "layer-color",
+        "opacity": 0.3
+      },
+      "translucency": {
+        "enabled": true,
+        "value": 0.5
+      }
+    },
+    {
+      "name": "me",
+      "layers": [
+        {
+          "image-name": "wave.svg",
+          "name": "wave",
+          "glass": false
+        },
+        {
+          "image-name": "front.svg",
+          "name": "front",
+          "glass": true
+        }
+      ],
+      "specular": true,
+      "shadow": {
+        "kind": "layer-color",
+        "opacity": 0.5
+      },
+      "translucency": {
+        "enabled": true,
+        "value": 0.2
+      }
+    }
+  ],
+  "supported-platforms": {
+    "squares": "shared"
+  }
+}

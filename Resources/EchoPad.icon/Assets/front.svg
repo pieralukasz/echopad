@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" fill="#FFFFFF">
+<g transform="translate(14,-48)">
+  <!-- Front speech bubble: the local speaker. -->
+  <path d="M 250 300 h 330 a 80 80 0 0 1 80 80 v 150 a 80 80 0 0 1 -80 80 h -200 l -110 86 v -86 h -20 a 80 80 0 0 1 -80 -80 v -150 a 80 80 0 0 1 80 -80 z"/>
+</g>
+</svg>

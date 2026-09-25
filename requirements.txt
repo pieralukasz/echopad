@@ -1,4 +1,0 @@
-mlx-whisper
-numpy
-sounddevice
-soundfile

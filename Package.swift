@@ -2,20 +2,41 @@
 import PackageDescription
 
 let package = Package(
-    name: "EchoPad",
-    platforms: [.macOS(.v14)],
+    name: "echopad",
+    platforms: [.macOS("26.0")],
     dependencies: [
-        .package(
-            url: "https://github.com/FluidInference/FluidAudio.git",
-            revision: "300165b240c45375add402265f62410b6df33cf1"
-        )
+        // Local checkouts while the packages are unpublished; switched to the
+        // GitHub URLs (tagged releases) when they go public.
+        .package(path: "../ScribeKit"),
+        .package(path: "../SystemAudioKit"),
     ],
     targets: [
+        .target(
+            name: "EchoPadKit",
+            dependencies: [
+                .product(name: "ScribeKit", package: "ScribeKit"),
+                .product(name: "SystemAudioKit", package: "SystemAudioKit"),
+            ],
+            path: "Sources/EchoPadKit",
+            swiftSettings: [.swiftLanguageMode(.v5)],
+            linkerSettings: [
+                .linkedFramework("AppKit"),
+                .linkedFramework("SwiftUI"),
+                .linkedFramework("Carbon"),
+                .linkedFramework("UserNotifications"),
+            ]
+        ),
         .executableTarget(
-            name: "EchoPad",
-            dependencies: [.product(name: "FluidAudio", package: "FluidAudio")],
-            path: "macos",
-            exclude: ["Info.plist", "PkgInfo"]
-        )
+            name: "echopad",
+            dependencies: ["EchoPadKit"],
+            path: "Sources/EchoPad",
+            swiftSettings: [.swiftLanguageMode(.v5)]
+        ),
+        .testTarget(
+            name: "EchoPadKitTests",
+            dependencies: ["EchoPadKit"],
+            path: "Tests/EchoPadKitTests",
+            swiftSettings: [.swiftLanguageMode(.v5)]
+        ),
     ]
 )

@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" fill="#FFFFFF">
+<g transform="translate(14,-48)">
+  <!-- Back speech bubble: the other side of the call. -->
+  <path d="M 774 420 h -60 v 150 a 120 120 0 0 1 -120 120 h -120 v 20 a 70 70 0 0 0 70 70 h 150 l 100 78 v -78 a 70 70 0 0 0 50 -67 v -223 a 70 70 0 0 0 -70 -70 z"/>
+</g>
+</svg>
