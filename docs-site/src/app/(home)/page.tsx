@@ -76,12 +76,12 @@ const privacyFacts = [
 const packages = [
   {
     name: "ScribeKit",
-    url: "/docs/packages#scribekit",
+    url: "https://scribekit.lucaspiera.com",
     text: "Parakeet v3 transcription with speakers in a few lines of Swift, plus Markdown, SRT, WebVTT and JSON output.",
   },
   {
     name: "SystemAudioKit",
-    url: "/docs/packages#systemaudiokit",
+    url: "https://systemaudiokit.lucaspiera.com",
     text: "Record the microphone and what the Mac plays, as two aligned tracks, through Core Audio process taps.",
   },
 ];

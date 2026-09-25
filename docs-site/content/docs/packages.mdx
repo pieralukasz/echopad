@@ -3,11 +3,13 @@ title: ScribeKit and SystemAudioKit
 description: The two open source Swift packages EchoPad is built on.
 ---
 
-EchoPad’s engine is two Swift packages, MIT licensed, that you can use in your own apps.
+EchoPad’s engine is two Swift packages, MIT licensed, that you can use in your own apps. Each has its own documentation site.
 
 ## ScribeKit
 
 Local speech-to-text with speakers. Wraps FluidAudio’s Parakeet TDT v3 and offline diarization in a small API that returns speaker turns with word timings, and renders them as Markdown, text, SRT, WebVTT or JSON. macOS 14+ and iOS 17+.
+
+Full documentation: [scribekit.lucaspiera.com](https://scribekit.lucaspiera.com).
 
 ```swift
 .package(url: "https://github.com/pieralukasz/ScribeKit.git", from: "0.1.0")
@@ -41,6 +43,8 @@ swift run scribe meeting.m4a --lang pl --format srt
 ## SystemAudioKit
 
 Record the microphone and what the Mac plays as separate tracks on one timeline. Core Audio process taps (macOS 14.2+) capture the whole system except your app, or only chosen apps; ScreenCaptureKit is a fallback. Gaps are filled with silence so the tracks stay aligned. Includes a detector for call apps using the microphone.
+
+Full documentation: [systemaudiokit.lucaspiera.com](https://systemaudiokit.lucaspiera.com).
 
 ```swift
 .package(url: "https://github.com/pieralukasz/SystemAudioKit.git", from: "0.1.0")
