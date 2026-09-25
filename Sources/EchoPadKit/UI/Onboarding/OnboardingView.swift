@@ -146,7 +146,7 @@ struct OnboardingView: View {
         case .loading(let fraction, let detail):
             VStack(spacing: 6) {
                 if let fraction { ProgressView(value: fraction) } else { ProgressView().controlSize(.small) }
-                Text("Downloading the speech model once (about 600 MB). \(detail)")
+                Text("Downloading the speech models once (about 480 MB). \(detail)")
                     .font(.caption).foregroundStyle(.secondary)
             }
             .frame(maxWidth: 360)

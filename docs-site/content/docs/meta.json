@@ -1,0 +1,22 @@
+{
+  "title": "EchoPad",
+  "pages": [
+    "index",
+    "installation",
+    "first-run",
+    "---Using EchoPad---",
+    "recording",
+    "save-locations",
+    "conversations",
+    "settings",
+    "languages",
+    "---Reference---",
+    "files",
+    "privacy",
+    "troubleshooting",
+    "---Project---",
+    "packages",
+    "architecture",
+    "contributing"
+  ]
+}

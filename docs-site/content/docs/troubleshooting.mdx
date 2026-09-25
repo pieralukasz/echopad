@@ -1,0 +1,50 @@
+---
+title: Troubleshooting
+description: Fixes for the problems people actually hit.
+---
+
+<Accordions>
+<Accordion title="The transcript has only my voice">
+
+EchoPad cannot hear the system audio. Open **Settings → Recording → Permissions** and allow **System Audio Recording**. After rebuilding EchoPad from source macOS can treat it as a new app; if the switch is on but nothing is recorded, turn it off and on again in **System Settings → Privacy & Security → Screen & System Audio Recording**.
+
+If it still fails, set **Capture with** to **ScreenCaptureKit**.
+
+</Accordion>
+<Accordion title="The first recording after granting a permission is silent">
+
+macOS asks for permission when recording starts, and audio before you answer is not delivered. Stop, then start again.
+
+</Accordion>
+<Accordion title="My voice appears twice, once as a speaker">
+
+Your voice leaks from the speakers into the microphone, or from the microphone into the call. Headphones fix it. EchoPad removes most of this echo, but not all.
+
+</Accordion>
+<Accordion title="Speakers are merged or split wrongly">
+
+Speaker detection works best with at least a few seconds per person. Rename speakers in the conversation to merge them in the transcript. For a known number of people, **Transcribe Again** after the call often helps.
+
+</Accordion>
+<Accordion title="The model download failed">
+
+Setup needs an internet connection to fetch the models from Hugging Face. Check the connection and press **Try Again** in **Settings → Transcription**.
+
+</Accordion>
+<Accordion title="The shortcut does nothing">
+
+Another app may use the same combination. Pick another in **Settings → General**.
+
+</Accordion>
+<Accordion title="No notification when a call starts">
+
+Allow notifications for EchoPad in **System Settings → Notifications**, and check **Settings → General → Notify me when a call starts**. Detection watches which app uses the microphone, so it starts when you join, not when the app opens.
+
+</Accordion>
+</Accordions>
+
+Still stuck? [Open an issue](https://github.com/pieralukasz/echopad/issues) with the output of:
+
+```bash
+log show --last 10m --predicate 'subsystem == "io.github.pieralukasz.echopad"'
+```

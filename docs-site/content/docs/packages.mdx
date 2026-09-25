@@ -1,0 +1,63 @@
+---
+title: ScribeKit and SystemAudioKit
+description: The two open source Swift packages EchoPad is built on.
+---
+
+EchoPad’s engine is two Swift packages, MIT licensed, that you can use in your own apps.
+
+## ScribeKit
+
+Local speech-to-text with speakers. Wraps FluidAudio’s Parakeet TDT v3 and offline diarization in a small API that returns speaker turns with word timings, and renders them as Markdown, text, SRT, WebVTT or JSON. macOS 14+ and iOS 17+.
+
+```swift
+.package(url: "https://github.com/pieralukasz/ScribeKit.git", from: "0.1.0")
+```
+
+```swift
+import ScribeKit
+
+let scribe = Scribe()
+try await scribe.prepare(diarization: true)
+
+let transcript = try await scribe.transcribe(url, options: .init(language: "en"))
+print(try TranscriptRenderer.render(transcript, as: .markdown))
+```
+
+For calls, pass the two tracks and your name. The microphone track is labelled with it; the system track is diarized:
+
+```swift
+let transcript = try await scribe.transcribeConversation(
+    microphone: micURL, system: systemURL,
+    options: .init(localSpeakerName: "Lukasz"))
+```
+
+The package includes a `scribe` command:
+
+```bash
+swift run scribe prepare --diarize
+swift run scribe meeting.m4a --lang pl --format srt
+```
+
+## SystemAudioKit
+
+Record the microphone and what the Mac plays as separate tracks on one timeline. Core Audio process taps (macOS 14.2+) capture the whole system except your app, or only chosen apps; ScreenCaptureKit is a fallback. Gaps are filled with silence so the tracks stay aligned. Includes a detector for call apps using the microphone.
+
+```swift
+.package(url: "https://github.com/pieralukasz/SystemAudioKit.git", from: "0.1.0")
+```
+
+```swift
+import SystemAudioKit
+
+let recorder = AudioRecorder()
+try await recorder.start(.init(microphone: .systemDefault, systemAudio: .everything), in: folder)
+// …
+let recording = await recorder.stop()   // microphone.wav + system.wav
+```
+
+Add `NSMicrophoneUsageDescription` and `NSAudioCaptureUsageDescription` to your Info.plist.
+
+```bash
+swift run sysaudio meetings
+swift run sysaudio record 10 ./out
+```

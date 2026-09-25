@@ -1,0 +1,271 @@
+@import "tailwindcss";
+@import "fumadocs-ui/css/neutral.css";
+@import "fumadocs-ui/css/preset.css";
+
+/* EchoPad blue, matched to the icon's wave (#1F5FD1). */
+@theme {
+  --color-fd-primary: hsl(218, 74%, 47%);
+  --color-fd-primary-foreground: hsl(0, 0%, 100%);
+  --color-fd-ring: hsl(218, 74%, 47%);
+}
+
+.dark {
+  --color-fd-primary: hsl(214, 90%, 66%);
+  --color-fd-primary-foreground: hsl(220, 50%, 10%);
+  --color-fd-ring: hsl(214, 90%, 66%);
+}
+
+html {
+  scrollbar-gutter: stable;
+}
+
+/* Keeps the page from shifting when a dialog locks scrolling; must beat the inline style. */
+html > body[data-scroll-locked] {
+  /* biome-ignore lint/complexity/noImportantStyles: overrides an inline style set by the scroll lock */
+  margin-right: 0px !important;
+  /* biome-ignore lint/complexity/noImportantStyles: same override for the CSS variable */
+  --removed-body-scroll-bar-size: 0px !important;
+}
+
+.echo-glow {
+  background:
+    radial-gradient(
+      60% 50% at 50% 0%,
+      hsla(218, 80%, 55%, 0.26),
+      transparent 70%
+    ),
+    radial-gradient(
+      40% 40% at 85% 20%,
+      hsla(265, 70%, 60%, 0.14),
+      transparent 70%
+    );
+}
+
+/* One-line steps are shorter than their 2rem number badge, so the badges
+   overlapped. Give each step the badge's height and a gap below it. */
+.fd-step:not(:has(h2, h3, h4)) {
+  min-height: 2rem;
+  padding-top: 0.25rem;
+}
+
+.fd-step:not(:has(h2, h3, h4)):not(:last-child) {
+  padding-bottom: 0.75rem;
+}
+
+/* The recording pill, rebuilt in HTML (components/live-pill.tsx). */
+.echo-pill {
+  position: relative;
+  height: 44px;
+  border-radius: 9999px;
+  overflow: hidden;
+  background: linear-gradient(
+    180deg,
+    rgb(255 255 255 / 0.78),
+    rgb(244 246 248 / 0.62)
+  );
+  border: 1px solid rgb(255 255 255 / 0.7);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.9),
+    inset 0 -1px 0 rgb(0 0 0 / 0.04),
+    0 10px 30px -8px rgb(0 0 0 / 0.28),
+    0 0 0 0.5px rgb(0 0 0 / 0.08);
+  backdrop-filter: blur(18px) saturate(1.6);
+  -webkit-backdrop-filter: blur(18px) saturate(1.6);
+  transition:
+    width 520ms cubic-bezier(0.34, 1.4, 0.64, 1),
+    opacity 300ms ease,
+    transform 420ms cubic-bezier(0.34, 1.4, 0.64, 1);
+}
+
+.dark .echo-pill {
+  background: linear-gradient(
+    180deg,
+    rgb(255 255 255 / 0.16),
+    rgb(255 255 255 / 0.08)
+  );
+  border-color: rgb(255 255 255 / 0.16);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.22),
+    0 10px 30px -8px rgb(0 0 0 / 0.6),
+    0 0 0 0.5px rgb(0 0 0 / 0.4);
+}
+
+.echo-pill-hidden {
+  opacity: 0;
+  transform: translateY(8px) scale(0.6);
+}
+
+.echo-pill-dot {
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 9999px;
+  background: rgb(255 59 48);
+  animation: echo-blink 1.4s ease-in-out infinite;
+}
+
+.echo-pill-bar {
+  width: 3px;
+  border-radius: 9999px;
+  background: rgb(60 60 67 / 0.55);
+  transform-origin: center;
+  animation: echo-bar 700ms ease-in-out infinite alternate;
+}
+
+.dark .echo-pill-bar {
+  background: rgb(235 235 245 / 0.7);
+}
+
+.echo-pill-thinking {
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background: rgb(60 60 67 / 0.5);
+  animation: echo-think 900ms ease-in-out infinite;
+}
+
+.dark .echo-pill-thinking {
+  background: rgb(235 235 245 / 0.65);
+}
+
+.echo-pill-check {
+  stroke-dasharray: 24;
+  stroke-dashoffset: 24;
+  animation: echo-draw 420ms 120ms ease-out forwards;
+}
+
+.echo-pill-check-static {
+  animation: none;
+  stroke-dashoffset: 0;
+}
+
+@keyframes echo-bar {
+  from {
+    transform: scaleY(0.3);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}
+
+@keyframes echo-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@keyframes echo-think {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: translateY(0);
+  }
+  40% {
+    opacity: 1;
+    transform: translateY(-3px);
+  }
+}
+
+@keyframes echo-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .echo-pill,
+  .echo-pill-dot,
+  .echo-pill-bar,
+  .echo-pill-thinking {
+    animation: none;
+    transition: none;
+  }
+
+  .echo-pill-check {
+    animation: none;
+    stroke-dashoffset: 0;
+  }
+}
+
+/* A calm wallpaper-like ground so the glass pill has something to sit on. */
+.echo-desk {
+  background:
+    radial-gradient(
+      70% 90% at 20% 0%,
+      hsla(215, 80%, 75%, 0.45),
+      transparent 70%
+    ),
+    radial-gradient(
+      60% 80% at 90% 100%,
+      hsla(260, 60%, 78%, 0.4),
+      transparent 70%
+    ),
+    var(--color-fd-card);
+}
+
+.dark .echo-desk {
+  background:
+    radial-gradient(
+      70% 90% at 20% 0%,
+      hsla(218, 60%, 32%, 0.55),
+      transparent 70%
+    ),
+    radial-gradient(
+      60% 80% at 90% 100%,
+      hsla(262, 45%, 30%, 0.45),
+      transparent 70%
+    ),
+    var(--color-fd-card);
+}
+
+.echo-pill-time {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  font-size: 15px;
+  color: rgb(28 28 30);
+}
+
+.dark .echo-pill-time {
+  color: rgb(245 245 247);
+}
+
+.echo-pill-stop {
+  flex-shrink: 0;
+  width: 30px;
+  height: 30px;
+  border-radius: 9999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgb(0 0 0 / 0.07);
+}
+
+.dark .echo-pill-stop {
+  background: rgb(255 255 255 / 0.12);
+}
+
+.echo-pill-stop::after {
+  content: "";
+  width: 10px;
+  height: 10px;
+  border-radius: 2.5px;
+  background: rgb(60 60 67 / 0.7);
+}
+
+.dark .echo-pill-stop::after {
+  background: rgb(235 235 245 / 0.75);
+}
+
+.echo-pill-label {
+  font-weight: 600;
+  font-size: 14px;
+  color: rgb(28 28 30);
+}
+
+.dark .echo-pill-label {
+  color: rgb(245 245 247);
+}

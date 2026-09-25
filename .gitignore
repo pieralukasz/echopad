@@ -9,6 +9,8 @@ docs-site/.next/
 docs-site/.source/
 docs-site/.vercel/
 docs-site/next-env.d.ts
+docs-site/out/
+docs-site/*.tsbuildinfo
 
 # EchoPad 1.x leftovers kept locally
 config.json
@@ -18,4 +20,4 @@ __pycache__/
 audio-capture
 mic-monitor
 echopad-hotkey
-icon.png
+/icon.png

@@ -1,0 +1,44 @@
+---
+title: Recording
+description: Start and stop recordings, meeting detection and the recording pill.
+---
+
+## Start and stop
+
+- **Menu bar:** click the icon, then **Start Recording** or **Stop**. Right-click the icon to start or stop without opening the panel.
+- **Shortcut:** **⇧⌘E** by default. Change it in [Settings → General](/docs/settings#general). It works in every app and needs no Accessibility permission.
+- **Window:** the **Record** button at the bottom of the sidebar.
+- **Notification:** see below.
+
+Recordings shorter than 1.5 seconds are discarded, so a double press does not leave empty notes.
+
+## Meeting detection
+
+When Zoom, Microsoft Teams, Google Meet in a browser, Slack, FaceTime, Webex, Discord, WhatsApp, Signal or Telegram starts using the microphone, EchoPad shows a notification with a **Record** button. Recordings started this way stop by themselves when the call ends.
+
+Turn it off in **Settings → General → Notify me when a call starts**.
+
+## What gets recorded
+
+EchoPad writes two tracks on one timeline:
+
+| Track | Source | Labelled as |
+| --- | --- | --- |
+| Microphone | The input device you picked | Your name |
+| System audio | Everything your Mac plays, only the call app, or apps you pick | Speaker 1, Speaker 2… |
+
+Because your voice comes from its own track, it is always attributed to you, even when the other side talks over you. When the other side plays through your speakers, the microphone hears them too; EchoPad drops microphone words that match the system track at the same moment, so they are not credited to you twice.
+
+<Callout type="info">Wear headphones if you can. The transcript is cleaner when the microphone hears only you.</Callout>
+
+## The recording pill
+
+<PillStage />
+
+The pill floats above other windows at the bottom of the screen. While recording it shows a red dot, the elapsed time, a waveform and a stop button. After you stop it shows progress, then **Saved**. Hide it in **Settings → General → Show the floating recording pill**.
+
+If a detected call stays silent on the system track for 20 seconds, EchoPad warns you. That almost always means the System Audio Recording permission is missing.
+
+## Importing audio
+
+**Import Audio** in the Conversations toolbar takes any audio or video file macOS can read (m4a, mp3, wav, mov, mp4…). It is transcribed with speaker detection and saved like a recording.

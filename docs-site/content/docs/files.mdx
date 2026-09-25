@@ -1,0 +1,36 @@
+---
+title: Files and folders
+description: Where EchoPad keeps settings, recordings and models.
+---
+
+<Files>
+  <Folder name="~/Library/Application Support/EchoPad" defaultOpen>
+    <File name="settings.json" />
+    <Folder name="Library" defaultOpen>
+      <Folder name="<conversation id>" defaultOpen>
+        <File name="conversation.json" />
+        <File name="transcript.json" />
+        <File name="microphone.wav" />
+        <File name="system.wav" />
+      </Folder>
+    </Folder>
+  </Folder>
+</Files>
+
+- **`settings.json`** holds everything from Settings and your save locations. It is plain JSON; quit EchoPad before editing it by hand.
+- **`Library`** keeps one folder per recording: the two tracks (16 kHz mono WAV), the transcript with word timings, and metadata. This is what **Transcribe Again** and **Save Again** use.
+- **Models** are cached by FluidAudio in `~/Library/Application Support/FluidAudio/Models`.
+
+Your transcripts live in your save locations, not here.
+
+## Environment
+
+| Variable | Effect |
+| --- | --- |
+| `ECHOPAD_DATA_DIR` | Use another folder instead of `~/Library/Application Support/EchoPad`, for testing. |
+
+## Logs
+
+```bash
+log stream --predicate 'subsystem == "io.github.pieralukasz.echopad"'
+```

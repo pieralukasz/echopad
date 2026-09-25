@@ -1,0 +1,67 @@
+---
+title: Installation
+description: Build EchoPad from source and install it in ~/Applications.
+---
+
+EchoPad is distributed as source for now. Building takes one command.
+
+## Requirements
+
+- macOS 26 or later.
+- Xcode 26 or the matching Command Line Tools (Swift 6.2).
+- About 500 MB of free space for the speech and speaker models, downloaded during setup.
+
+## Install
+
+<Steps>
+<Step>
+
+### Clone the repository
+
+```bash
+git clone https://github.com/pieralukasz/echopad.git
+cd echopad
+```
+
+</Step>
+<Step>
+
+### Build and install
+
+```bash
+scripts/install.sh
+```
+
+This builds a release binary, bundles `EchoPad.app`, copies it to `~/Applications` and opens it.
+
+</Step>
+<Step>
+
+### Follow the setup window
+
+Setup asks for the microphone and system audio permissions, downloads the models and lets you pick where transcripts go. See [First run](/docs/first-run).
+
+</Step>
+</Steps>
+
+## Updating
+
+Pull and run the installer again. It quits the running copy first; your settings and recordings stay where they are.
+
+```bash
+git pull
+scripts/install.sh
+```
+
+## Coming from EchoPad 1.x
+
+EchoPad 2 is a rewrite in Swift. It needs no Python, no Homebrew and no Hugging Face token. The installer quits the old app and turns off its login item. Your old transcripts stay in their folders; point a [save location](/docs/save-locations) at the same folder to keep one place.
+
+## Uninstall
+
+```bash
+scripts/uninstall.sh          # removes the app, keeps settings and recordings
+scripts/uninstall.sh --purge  # also deletes ~/Library/Application Support/EchoPad
+```
+
+Transcripts in your save locations are never touched.

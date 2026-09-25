@@ -1,0 +1,26 @@
+---
+title: Architecture
+description: How EchoPad is put together.
+---
+
+```
+EchoPad.app
+├── EchoPadKit         app logic and SwiftUI
+│   ├── Model          settings, save locations, name templates, library, exporter
+│   ├── Recording      recording controller, meeting notifications, hotkey, after-save
+│   └── UI             menu bar, pill, main window, onboarding
+├── ScribeKit          transcription, diarization, renderers   (package)
+│   └── FluidAudio     Parakeet TDT v3, speaker models on Core ML
+└── SystemAudioKit     microphone, process taps, ScreenCaptureKit, meeting detector   (package)
+```
+
+## A recording, step by step
+
+1. **SystemAudioKit** starts the microphone and a process tap. Each track is converted to 16 kHz mono and written against the host clock, with silence filling any gap, so both files share one timeline.
+2. On stop, the two WAV files stay in the conversation’s folder in the library.
+3. **ScribeKit** transcribes the microphone track as you, and the system track with diarization. Microphone words that match the system track at the same moment are dropped as echo. Turns are merged in time order.
+4. The **Exporter** renders each chosen format, mixes the audio to AAC or WAV if needed, writes files for the save location and runs the after-save actions.
+
+## Why two tracks
+
+Diarization on a single mixed file guesses who is who. With a separate microphone track, “me” is known for certain, and the model only has to separate the remote voices, which is where it is most accurate.

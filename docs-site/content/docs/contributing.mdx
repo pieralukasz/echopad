@@ -1,0 +1,25 @@
+---
+title: Contributing
+description: Build, test and change EchoPad.
+---
+
+```bash
+git clone https://github.com/pieralukasz/echopad.git
+cd echopad
+swift build
+swift test
+```
+
+Run a development build without touching your installed copy or data:
+
+```bash
+swift build -c release
+scripts/bundle-app.sh .build/release/echopad .build/EchoPad.app 2.0.0
+open -n --env ECHOPAD_DATA_DIR=/tmp/echopad-dev .build/EchoPad.app
+```
+
+- The icon is `Resources/EchoPad.icon`, edited in Icon Composer. `scripts/render-icon.sh` exports PNGs for the README and this site.
+- The docs site is in `docs-site/` (Next.js and Fumadocs). `bun install && bun dev` to preview.
+- Engine changes belong in [ScribeKit or SystemAudioKit](/docs/packages) when they are useful outside EchoPad.
+
+Issues and pull requests are welcome on [GitHub](https://github.com/pieralukasz/echopad).
