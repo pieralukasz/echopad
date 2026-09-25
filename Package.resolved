@@ -1,5 +1,5 @@
 {
-  "originHash" : "99656965466941392d92264105aff18b59223221060de59186e3b25885dd6001",
+  "originHash" : "77f89de755ad65dcd345956de0baf96587a1c6922a8b896172df2e5bce999e26",
   "pins" : [
     {
       "identity" : "fluidaudio",
@@ -8,6 +8,24 @@
       "state" : {
         "revision" : "21493f8dac5a97e65742e6ff26f42f164c2fda0f",
         "version" : "0.17.4"
+      }
+    },
+    {
+      "identity" : "scribekit",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/pieralukasz/ScribeKit.git",
+      "state" : {
+        "revision" : "17385c5758d16ca5204e1f78528b21c8104f695b",
+        "version" : "0.1.0"
+      }
+    },
+    {
+      "identity" : "systemaudiokit",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/pieralukasz/SystemAudioKit.git",
+      "state" : {
+        "revision" : "48d2e6112d9e79d24b13be0bb46422ede50789a7",
+        "version" : "0.1.0"
       }
     }
   ],

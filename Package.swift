@@ -7,8 +7,8 @@ let package = Package(
     dependencies: [
         // Local checkouts while the packages are unpublished; switched to the
         // GitHub URLs (tagged releases) when they go public.
-        .package(path: "../ScribeKit"),
-        .package(path: "../SystemAudioKit"),
+        .package(url: "https://github.com/pieralukasz/ScribeKit.git", from: "0.1.0"),
+        .package(url: "https://github.com/pieralukasz/SystemAudioKit.git", from: "0.1.0"),
     ],
     targets: [
         .target(
