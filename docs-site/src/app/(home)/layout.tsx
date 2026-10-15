@@ -1,6 +1,14 @@
-import { HomeLayout } from "fumadocs-ui/layouts/home";
-import { baseOptions } from "@/lib/layout.shared";
+import { Literata } from "next/font/google";
+import "./home.css";
 
+const literata = Literata({
+  subsets: ["latin", "latin-ext"],
+  weight: ["400", "500", "600"],
+  style: ["normal", "italic"],
+  variable: "--font-ep",
+});
+
+/** The home page has its own bar and footer; /docs keeps the Fumadocs layout. */
 export default function Layout({ children }: LayoutProps<"/">) {
-  return <HomeLayout {...baseOptions()}>{children}</HomeLayout>;
+  return <div className={`ep ${literata.variable}`}>{children}</div>;
 }
