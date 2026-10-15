@@ -86,7 +86,6 @@ const tiles = [
   {
     shot: "conversations",
     alt: "Conversations: today's Weekly product sync, 47 minutes on Zoom with three speakers",
-    position: "62% 30%",
     values: ["47 min", "3 speakers", "Zoom", "162 words"],
     when: ["25 Sep 2026", "10:30"],
     name: "Conversations, searchable",
@@ -94,7 +93,6 @@ const tiles = [
   {
     shot: "destinations",
     alt: "Save location editor: folder ~/Notes/Meetings, file name {date} {time} - {title}, subfolder {year}/{month}",
-    position: "50% 30%",
     values: ["Markdown", "Text", "SRT", "JSON"],
     when: ["~/Notes/Meetings", "{year}/{month}"],
     name: "Save locations, one per place",
@@ -102,7 +100,6 @@ const tiles = [
   {
     shot: "settings-recording",
     alt: "Recording settings: your microphone, the other side as system audio, permissions",
-    position: "60% 30%",
     values: ["You", "Other side", "Core Audio", "2 tracks"],
     when: ["Microphone", "Everything on this Mac"],
     name: "Recording settings",
@@ -110,7 +107,6 @@ const tiles = [
   {
     shot: "settings-transcription",
     alt: "Transcription settings: language detected automatically, speakers identified, Parakeet TDT 0.6B v3 ready",
-    position: "62% 30%",
     values: ["Parakeet", "v3", "25 lang.", "Offline"],
     when: ["Detect automatically", "Neural Engine"],
     name: "Transcription settings",
@@ -294,10 +290,6 @@ export default function HomePage() {
                   width={2154}
                   height={1280}
                   loading="lazy"
-                  style={{
-                    objectPosition: tile.position,
-                    transformOrigin: tile.position,
-                  }}
                 />
               </div>
               <div className="ep-strip">

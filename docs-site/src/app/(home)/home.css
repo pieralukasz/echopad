@@ -771,16 +771,19 @@
 
 .ep-gallery ul {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(2, 1fr);
   gap: var(--gap);
 }
 
+/* The whole app window, never a crop: the screenshots are full windows (2154 x 1280) and a crop of a
+   settings pane only shows empty rows and cut-off labels. */
 .ep-tile img {
+  display: block;
   width: 100%;
-  aspect-ratio: 4 / 5;
+  height: auto;
+  aspect-ratio: 2154 / 1280;
   object-fit: cover;
   background: #1e1e20;
-  transform: scale(1.45);
   transition: transform 600ms var(--ease-out);
 }
 
@@ -788,8 +791,10 @@
   overflow: hidden;
 }
 
-.ep-tile:hover img {
-  transform: scale(1.5);
+@media (hover: hover) and (pointer: fine) {
+  .ep-tile:hover img {
+    transform: scale(1.03);
+  }
 }
 
 .ep-strip {
@@ -1111,11 +1116,13 @@
 
   .ep-files-index {
     padding: 0 var(--margin);
+    min-width: 0;
   }
 
   .ep-files-names {
     flex-direction: row;
     gap: 24px;
+    max-width: 100%;
     overflow-x: auto;
     scroll-snap-type: x mandatory;
     padding-bottom: 8px;
@@ -1163,7 +1170,7 @@
 
 @media (max-width: 560px) {
   .ep-gallery ul {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: minmax(0, 1fr);
     gap: 8px;
   }
 
