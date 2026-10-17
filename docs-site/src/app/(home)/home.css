@@ -1217,6 +1217,120 @@
   }
 }
 
+/* ---------- Phone: the same page, simpler ---------- */
+
+@media (max-width: 760px) {
+  /* The hero window ends at the list's right edge, so no transcript line is cut. */
+  .ep-stage-shot {
+    width: 216%;
+  }
+
+  /* The same two settings windows are in the gallery below; at phone width they are only grey rows. */
+  .ep-inline-shot {
+    display: none;
+  }
+
+  /* Section rhythm: no screens of empty paper between sections. */
+  .ep-steps,
+  .ep-files,
+  .ep-gallery {
+    margin-top: 64px;
+  }
+
+  .ep-proof {
+    padding: 64px var(--margin);
+    gap: 20px;
+  }
+
+  .ep-lists {
+    row-gap: 64px;
+  }
+
+  .ep-cta {
+    min-height: 0;
+    margin-top: 64px;
+    padding: 56px var(--margin);
+    gap: 40px;
+  }
+
+  .ep-footer {
+    padding-top: 56px;
+  }
+
+  /* How it works: four tabs instead of a slider with names under it. */
+  .ep-steps {
+    min-height: 0;
+  }
+
+  .ep-steps-fragment {
+    min-height: 300px;
+    padding: 32px 20px;
+  }
+
+  .ep-steps-control {
+    padding: 8px var(--margin);
+  }
+
+  .ep-steps-control .ep-range {
+    display: none;
+  }
+
+  .ep-steps-names {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    height: auto;
+    margin-top: 0;
+  }
+
+  .ep-steps-names button {
+    width: 100%;
+    min-height: 48px;
+    padding: 8px 0;
+    font-size: var(--step-small);
+    text-align: center;
+    border-bottom: 3px solid var(--field-pale);
+  }
+
+  .ep-steps-names button.is-on {
+    border-bottom-color: var(--accent);
+  }
+
+  /* Formats: all five names visible, the file fits the screen instead of running off it. */
+  .ep-files-names {
+    flex-wrap: wrap;
+    column-gap: 20px;
+    overflow-x: visible;
+    padding-bottom: 0;
+  }
+
+  .ep-files-names button {
+    font-size: 1.375rem;
+    min-height: 44px;
+  }
+
+  .ep-files-stage {
+    height: 64svh;
+    padding: 16px 16px 0;
+  }
+
+  [data-ui].ep-sheet,
+  [data-ui].ep-sheet.is-narrow {
+    width: 100%;
+  }
+
+  [data-ui].ep-sheet pre {
+    padding: 16px;
+    font-size: 12.5px;
+  }
+
+  /* Languages in two columns: half the scroll. */
+  .ep-list ul:not(.ep-parts) {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: 20px;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .ep-wave span,
   .ep-fade {
