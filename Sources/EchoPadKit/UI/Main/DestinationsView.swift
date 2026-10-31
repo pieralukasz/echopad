@@ -219,6 +219,8 @@ struct DestinationEditor: View {
 struct AfterSaveEditor: View {
     @Binding var actions: [AfterSaveAction]
     let isObsidian: Bool
+    @State private var apiKey = ""
+    @State private var hasAPIKey = APIKeyStore.load() != nil
 
     var body: some View {
         ForEach(AfterSaveAction.Kind.allCases, id: \.self) { kind in
@@ -255,6 +257,21 @@ struct AfterSaveEditor: View {
                 }
                 Text("Gets the transcript path and the audio path as arguments.")
                     .font(.caption).foregroundStyle(.secondary)
+            case .sortWithClaude(let rules):
+                TextField("Rules file", text: Binding(get: { rules }, set: { actions[index] = .sortWithClaude($0) }),
+                          prompt: Text("relative to the vault, e.g. rules.md"))
+                HStack {
+                    SecureField("Anthropic API key", text: $apiKey,
+                                prompt: Text(hasAPIKey ? "Saved in the keychain" : "sk-ant-…"))
+                    Button("Save") {
+                        APIKeyStore.save(apiKey)
+                        apiKey = ""
+                        hasAPIKey = APIKeyStore.load() != nil
+                    }
+                    .disabled(apiKey.isEmpty)
+                }
+                Text("Claude picks a folder of the vault, a title and a summary. Unsure notes get review: true; empty recordings stay here.")
+                    .font(.caption).foregroundStyle(.secondary)
             default:
                 EmptyView()
             }
@@ -269,6 +286,7 @@ struct AfterSaveEditor: View {
         case .copyTranscript: return .copyTranscript
         case .runShortcut: return .runShortcut(argument)
         case .runScript: return .runScript(argument)
+        case .sortWithClaude: return .sortWithClaude(argument)
         }
     }
 }
