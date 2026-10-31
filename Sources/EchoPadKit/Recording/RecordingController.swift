@@ -196,7 +196,18 @@ public final class RecordingController {
         }
         appState.transition(to: .saved(title: conversation.title), resetAfter: 2.5)
         sounds?.play(.saved)
-        if runActions { AfterSave.run(destination.afterSave, result: result, transcript: transcript, destination: destination) }
+        if runActions {
+            let library = library
+            Task {
+                await AfterSave.run(destination.afterSave, result: result, transcript: transcript,
+                                    destination: destination, conversation: conversation) { title, files in
+                    library.update(conversation.id) {
+                        $0.title = title
+                        $0.exportedFiles = files.map(\.path)
+                    }
+                }
+            }
+        }
         if let saved = library.conversation(id: conversation.id) { onSaved?(saved) }
     }
 

@@ -23,8 +23,35 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         super.init()
     }
 
+    /// Text fields only get ⌘X/⌘C/⌘V/⌘A/⌘Z through menu items, so an app without
+    /// a main menu just beeps. Shown in the menu bar while a window is open.
+    private static func makeMainMenu() -> NSMenu {
+        let main = NSMenu()
+
+        let app = NSMenu()
+        app.addItem(withTitle: "Quit EchoPad", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        let appItem = NSMenuItem(title: "EchoPad", action: nil, keyEquivalent: "")
+        appItem.submenu = app
+        main.addItem(appItem)
+
+        let edit = NSMenu(title: "Edit")
+        edit.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
+        edit.addItem(withTitle: "Redo", action: Selector(("redo:")), keyEquivalent: "Z")
+        edit.addItem(.separator())
+        edit.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        edit.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        edit.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        edit.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        let editItem = NSMenuItem(title: "Edit", action: nil, keyEquivalent: "")
+        editItem.submenu = edit
+        main.addItem(editItem)
+
+        return main
+    }
+
     public func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
+        NSApp.mainMenu = Self.makeMainMenu()
         recorder = RecordingController(appState: appState, library: library, settings: settings.value)
         recorder.sounds = sounds
         recorder.askForTitle = { [weak self] current in await self?.askForTitle(current) }

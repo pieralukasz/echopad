@@ -114,6 +114,9 @@ public enum AfterSaveAction: Codable, Hashable, Sendable {
     /// Runs an executable with the transcript path as its first argument, and the
     /// audio path (or an empty string) as the second.
     case runScript(String)
+    /// Asks Claude which folder of the vault the note belongs in, then moves and renames it there.
+    /// The argument is a rules file, relative to the vault or an absolute path (empty for none).
+    case sortWithClaude(String)
 
     public var kind: Kind {
         switch self {
@@ -123,11 +126,12 @@ public enum AfterSaveAction: Codable, Hashable, Sendable {
         case .copyTranscript: return .copyTranscript
         case .runShortcut: return .runShortcut
         case .runScript: return .runScript
+        case .sortWithClaude: return .sortWithClaude
         }
     }
 
     public enum Kind: String, CaseIterable, Sendable {
-        case revealInFinder, openFile, openInObsidian, copyTranscript, runShortcut, runScript
+        case sortWithClaude, revealInFinder, openFile, openInObsidian, copyTranscript, runShortcut, runScript
 
         public var title: String {
             switch self {
@@ -137,6 +141,7 @@ public enum AfterSaveAction: Codable, Hashable, Sendable {
             case .copyTranscript: return "Copy transcript to clipboard"
             case .runShortcut: return "Run a shortcut"
             case .runScript: return "Run a script"
+            case .sortWithClaude: return "Sort into folders"
             }
         }
     }
