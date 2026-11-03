@@ -48,6 +48,10 @@ final class StatusBarController: NSObject {
         }
     }
 
+    func showPopover() {
+        if !popover.isShown { togglePopover() }
+    }
+
     func closePopover() {
         popover.performClose(nil)
     }

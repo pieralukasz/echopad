@@ -156,6 +156,8 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.recorder.toggle()
             },
             discardRecording: { [weak self] in Task { await self?.recorder.discard() } },
+            checkSound: { [weak self] in self?.statusBar.showPopover() },
+            playTestSound: { [weak self] in Task { await self?.recorder.testSystemAudio() } },
             openMainWindow: { [weak self] section in
                 self?.statusBar.closePopover()
                 self?.windows.showMain(section: section)

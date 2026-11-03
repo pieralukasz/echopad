@@ -78,11 +78,8 @@ struct MenuBarPanel: View {
                     levelRow("speaker.wave.2.fill", appState.systemLevels)
                 }
             }
-            if appState.systemAudioLooksSilent {
-                Label("No sound from the other side. Check System Audio Recording in Privacy settings.",
-                      systemImage: "exclamationmark.triangle.fill")
-                    .font(.caption)
-                    .symbolRenderingMode(.multicolor)
+            if appState.systemAudioLooksSilent || appState.soundTest != nil {
+                SoundCheckView()
             }
             destinationPicker
             Button("Discard Recording", role: .destructive, action: actions.discardRecording)
