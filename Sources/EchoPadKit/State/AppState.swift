@@ -67,6 +67,10 @@ public final class AppState {
     /// Set when system audio has stayed silent for a while during a call, a hint that the
     /// permission is missing or audio goes elsewhere.
     public var systemAudioLooksSilent = false
+    /// What the system track of the recording in progress captures, for the sound check.
+    public var captureScope: SoundCheck.Scope = .everything
+    /// Result of the sound check's test sound in this recording; nil until it is played.
+    public var soundTest: SoundCheck.TestResult?
     public var detectedMeeting: String?
 
     private var resetTask: Task<Void, Never>?

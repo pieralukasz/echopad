@@ -40,9 +40,15 @@ struct RecordingPillView: View {
                     .frame(minWidth: 44, alignment: .leading)
                 WaveformView(levels: appState.combinedLevels, maxHeight: 20)
                 if appState.systemAudioLooksSilent {
-                    Image(systemName: "speaker.slash.fill")
-                        .foregroundStyle(.yellow)
-                        .help("No sound from the other side yet. Check the system audio permission.")
+                    Button(action: actions.checkSound) {
+                        Image(systemName: "speaker.slash.fill")
+                            .foregroundStyle(.yellow)
+                            .frame(width: 24, height: 28)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .help("No sound from the other side yet. Click to check what is wrong.")
+                    .accessibilityLabel("Check sound from the other side")
                 }
                 Button(action: actions.toggleRecording) {
                     Image(systemName: "stop.fill")

@@ -9,6 +9,11 @@ import SystemAudioKit
 public final class RecordingController {
     /// Seconds of silent system audio during a detected call before the UI warns about it.
     static let SILENT_SYSTEM_WARNING: TimeInterval = 20
+    /// Peak level above which the system track counts as carrying sound.
+    static let SOUND_THRESHOLD: Float = 0.02
+    /// How long the sound check listens for its test sound.
+    static let TEST_SOUND_WAIT: Duration = .milliseconds(1800)
+    static let TEST_SOUND = "/System/Library/Sounds/Ping.aiff"
     /// Shorter recordings are treated as accidental and discarded.
     static let MINIMUM_DURATION: TimeInterval = 1.5
 
@@ -28,6 +33,8 @@ public final class RecordingController {
     private var meetingBundleID: String?
     private var silenceTimer: Timer?
     private var silentSince: Date?
+    /// Set while the sound check listens, so the silence timer does not take its peak.
+    private var isTestingSound = false
 
     public init(appState: AppState, library: ConversationLibrary, settings: Settings, scribe: Scribe = .shared) {
         self.appState = appState
@@ -58,8 +65,9 @@ public final class RecordingController {
         let date = Date()
         meetingBundleID = meeting?.bundleID
 
+        let configuration = configuration(for: meeting)
         do {
-            try await recorder.start(configuration(for: meeting), in: folder)
+            try await recorder.start(configuration, in: folder)
         } catch {
             try? FileManager.default.removeItem(at: folder)
             fail(Self.describe(error))
@@ -72,6 +80,8 @@ public final class RecordingController {
         appState.currentApp = meeting?.appName
         appState.currentDestinationID = destinationID ?? settings.defaultDestinationID
         appState.systemAudioLooksSilent = false
+        appState.soundTest = nil
+        appState.captureScope = Self.scope(of: configuration, meeting: meeting)
         appState.transition(to: .recording(since: date))
         sounds?.play(.start)
         watchSystemAudio()
@@ -249,9 +259,9 @@ public final class RecordingController {
         guard settings.systemAudio != .off else { return }
         silenceTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
-                guard let self else { return }
+                guard let self, !self.isTestingSound else { return }
                 let peak = self.recorder.systemAudioPeak() ?? 0
-                if peak > 0.02 {
+                if peak > Self.SOUND_THRESHOLD {
                     self.silentSince = nil
                     self.appState.systemAudioLooksSilent = false
                 } else if self.meetingBundleID != nil || self.appState.detectedMeeting != nil {
@@ -261,6 +271,43 @@ public final class RecordingController {
                 }
             }
         }
+    }
+
+    /// Plays a short sound from a separate process (EchoPad's own sound is excluded from the
+    /// capture) and checks whether it reaches the system track of the recording in progress.
+    public func testSystemAudio() async {
+        guard appState.phase.isRecording, !isTestingSound else { return }
+        isTestingSound = true
+        defer { isTestingSound = false }
+        appState.soundTest = .running
+        _ = recorder.systemAudioPeak()
+        let player = Process()
+        player.executableURL = URL(fileURLWithPath: "/usr/bin/afplay")
+        player.arguments = ["-v", "0.6", Self.TEST_SOUND]
+        do {
+            try player.run()
+        } catch {
+            Log.recording.error("Test sound failed: \(error.localizedDescription, privacy: .public)")
+        }
+        try? await Task.sleep(for: Self.TEST_SOUND_WAIT)
+        guard appState.phase.isRecording else { return }
+        let heard = (recorder.systemAudioPeak() ?? 0) > Self.SOUND_THRESHOLD
+        appState.soundTest = heard ? .heard : .notHeard
+        if heard {
+            silentSince = nil
+            appState.systemAudioLooksSilent = false
+        }
+    }
+
+    static func scope(of configuration: AudioRecorder.Configuration, meeting: DetectedMeeting?) -> SoundCheck.Scope {
+        guard configuration.backend == .processTap, case .apps(let bundleIDs) = configuration.systemAudio else {
+            return .everything
+        }
+        return .apps(bundleIDs.map { bundleID in
+            if bundleID == meeting?.bundleID, let name = meeting?.appName { return name }
+            guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else { return bundleID }
+            return FileManager.default.displayName(atPath: url.path).replacingOccurrences(of: ".app", with: "")
+        })
     }
 
     private func fail(_ message: String) {

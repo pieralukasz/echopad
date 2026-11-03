@@ -4,6 +4,9 @@ import SwiftUI
 struct AppActions {
     var toggleRecording: () -> Void = {}
     var discardRecording: () -> Void = {}
+    /// Opens the menu bar panel with the sound check.
+    var checkSound: () -> Void = {}
+    var playTestSound: () -> Void = {}
     var openMainWindow: (MainSection?) -> Void = { _ in }
     var openConversation: (UUID) -> Void = { _ in }
     var reprocess: (UUID) -> Void = { _ in }
