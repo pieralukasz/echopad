@@ -14,6 +14,13 @@ struct AppActions {
     var renameSpeaker: (UUID, String, String) -> Void = { _, _, _ in }
     var importAudio: () -> Void = {}
     var retryModel: () -> Void = {}
+    /// Downloads and prepares the live model on request (never on opening Settings).
+    var prepareLiveModel: () -> Void = {}
+    /// Opens the live transcript panel; the recording goes on whether it is open or not.
+    var showLiveTranscript: () -> Void = {}
+    var retryAPI: () -> Void = {}
+    /// Copies the API token or webhook secret to the clipboard; false when there is none.
+    var copySecret: (IntegrationSecrets.Kind) -> Bool = { _ in false }
     var quit: () -> Void = {}
 }
 
@@ -28,11 +35,26 @@ extension EnvironmentValues {
     }
 }
 
+extension MainSection {
+    init?(debugName: String) {
+        switch debugName {
+        case "conversations": self = .conversations
+        case "destinations": self = .destinations
+        case "recording": self = .recording
+        case "transcription": self = .transcription
+        case "integrations": self = .integrations
+        case "general": self = .general
+        default: return nil
+        }
+    }
+}
+
 enum MainSection: Hashable {
     case conversations
     case destinations
     case recording
     case transcription
+    case integrations
     case general
     case about
 }

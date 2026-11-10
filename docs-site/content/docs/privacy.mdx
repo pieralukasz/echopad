@@ -5,7 +5,7 @@ description: What EchoPad records, where it goes, and what never leaves your Mac
 
 - **Audio** is recorded only between start and stop, into `~/Library/Application Support/EchoPad/Library` and, if you choose, your save location.
 - **Transcription and speaker detection** run on your Mac, on the Neural Engine, through [FluidAudio](https://github.com/FluidInference/FluidAudio).
-- **Network:** the only requests download the speech and speaker models from Hugging Face during setup. After that EchoPad works offline.
+- **Network:** the only requests download the speech and speaker models from Hugging Face during setup. After that EchoPad works offline, unless you turn on [webhooks](/docs/integrations), which send event details (and the transcript only if you opt in) to the addresses you list. The [local API](/docs/integrations) listens only on `127.0.0.1` and is off by default.
 - **No analytics, crash reporting or account.** The source is open, so you can check.
 
 ## Recording other people

@@ -39,6 +39,15 @@ struct RecordingPillView: View {
                     .font(.callout.weight(.semibold))
                     .frame(minWidth: 44, alignment: .leading)
                 WaveformView(levels: appState.combinedLevels, maxHeight: 20)
+                if let live = appState.live {
+                    Button(action: actions.showLiveTranscript) {
+                        LiveIndicator(status: live, size: .regular).frame(width: 28, height: 28)
+                    }
+                    .buttonStyle(.glass)
+                    .buttonBorderShape(.circle)
+                    .help("\(live.title). Click to show the live transcript.")
+                    .accessibilityLabel("Show live transcript")
+                }
                 if appState.systemAudioLooksSilent {
                     Button(action: actions.checkSound) {
                         Image(systemName: "speaker.slash.fill")
@@ -86,6 +95,34 @@ struct RecordingPillView: View {
                 .frame(minHeight: Self.HEIGHT)
                 .frame(maxWidth: 420)
         }
+    }
+}
+
+/// The live transcript's state as a small symbol: loading, listening or failed.
+struct LiveIndicator: View {
+    enum Size { case small, regular }
+    let status: LiveStatus
+    let size: Size
+
+    var body: some View {
+        Group {
+            switch status {
+            case .preparing:
+                ProgressView().controlSize(size == .small ? .mini : .small)
+            case .listening, .finished:
+                Image(systemName: "captions.bubble").foregroundStyle(.secondary)
+            case .failed:
+                Image(systemName: "exclamationmark.bubble.fill").foregroundStyle(.yellow)
+            }
+        }
+        .font(size == .small ? .caption : .callout)
+        .help(help)
+        .accessibilityLabel(status.title)
+    }
+
+    private var help: String {
+        if case .failed(let message) = status { return "\(status.title): \(message)" }
+        return status.title
     }
 }
 

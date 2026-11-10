@@ -5,4 +5,5 @@ enum Log {
     static let recording = Logger(subsystem: "io.github.pieralukasz.echopad", category: "recording")
     static let transcription = Logger(subsystem: "io.github.pieralukasz.echopad", category: "transcription")
     static let sorting = Logger(subsystem: "io.github.pieralukasz.echopad", category: "sorting")
+    static let integrations = Logger(subsystem: "io.github.pieralukasz.echopad", category: "integrations")
 }

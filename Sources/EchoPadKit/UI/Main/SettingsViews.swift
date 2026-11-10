@@ -193,14 +193,76 @@ struct TranscriptionSettingsView: View {
             } footer: {
                 Text("Voices on the system track are told apart and labelled Speaker 1, Speaker 2… You can rename them in each conversation.")
             }
-            Section("Speech model") {
+            Section {
                 LabeledContent("Model", value: "Parakeet TDT 0.6B v3 + pyannote")
                 LabeledContent("Status") { modelStatus }
                 LabeledContent("Runs on", value: "Apple Neural Engine, fully offline")
+            } header: {
+                Text("Speech model")
+            } footer: {
+                Text("Makes the transcript that is saved after Stop, with or without the live transcript.")
+            }
+            Section {
+                Toggle("Live transcript while recording", isOn: $settings.value.live.enabled)
+                if settings.value.live.enabled {
+                    Picker("Language", selection: $settings.value.live.language) {
+                        Text("Detect automatically").tag(String?.none)
+                        Divider()
+                        ForEach(Languages.live, id: \.code) { Text($0.name).tag(Optional($0.code)) }
+                    }
+                    Picker("Model look-ahead", selection: $settings.value.live.latencyMs) {
+                        Text("0.56 s").tag(560)
+                        Text("1.12 s (recommended)").tag(1120)
+                        Text("2.08 s").tag(2080)
+                    }
+                    Toggle("Tell the other speakers apart", isOn: $settings.value.live.diarize)
+                }
+                LabeledContent("Model", value: settings.value.live.diarize ? "Nemotron Unified ASR 0.6B + LS-EEND" : "Nemotron Unified ASR 0.6B")
+                LabeledContent("Status") { liveModelStatus }
+            } header: {
+                Text("Live transcript")
+            } footer: {
+                Text(liveFooter)
             }
         }
         .formStyle(.grouped)
         .navigationTitle("Transcription")
+    }
+
+    private var liveFooter: String {
+        var text = "A draft transcript while you record: open it from the pill or the menu bar, or read it from apps and agents on this Mac (Local API and the echopad live command). "
+            + "It loads a second model, about 1.2 GB of memory while recording. Look-ahead is the model's window: "
+            + "a shorter one shows words sooner but less accurately; it is not the whole delay. "
+            + "Speakers on the system track are anonymous (Speaker 1, 2…)."
+        if appState.phase.isBusy { text += " Changes apply to the next recording." }
+        return text
+    }
+
+    @ViewBuilder
+    private var liveModelStatus: some View {
+        let live = settings.value.live
+        switch appState.liveModel {
+        case .preparing:
+            HStack {
+                ProgressView().controlSize(.small)
+                Text("Downloading and preparing…").foregroundStyle(.secondary)
+            }
+        case .failed(let message):
+            HStack {
+                Text(message).foregroundStyle(.secondary).lineLimit(2)
+                Button("Try Again") { actions.prepareLiveModel() }
+            }
+        case .downloaded, .notDownloaded:
+            if LiveModelCache.isDownloaded(latencyMs: live.latencyMs, diarize: live.diarize) {
+                Label("Downloaded", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+            } else {
+                HStack {
+                    Text("Not downloaded").foregroundStyle(.secondary)
+                    Button("Download Now") { actions.prepareLiveModel() }
+                        .help("Downloads about 1.2 GB from Hugging Face once and prepares it. Otherwise this happens at the first recording with live transcript on.")
+                }
+            }
+        }
     }
 
     @ViewBuilder
@@ -233,6 +295,13 @@ enum Languages {
         ("mt", "Maltese"), ("pl", "Polish"), ("pt", "Portuguese"), ("ro", "Romanian"), ("ru", "Russian"),
         ("sk", "Slovak"), ("sl", "Slovenian"), ("es", "Spanish"), ("sv", "Swedish"), ("uk", "Ukrainian"),
     ].map { Language(code: $0.0, name: $0.1) }
+
+    /// Languages of the live model, Polish first (the default), then by name.
+    static let live: [Language] = LiveEngineFactory.supportedLanguages.map { code in
+        Language(code: code, name: all.first { $0.code == code }?.name
+                 ?? Locale(identifier: "en").localizedString(forLanguageCode: code) ?? code)
+    }
+    .sorted { ($0.code == "pl" ? 0 : 1, $0.name) < ($1.code == "pl" ? 0 : 1, $1.name) }
 }
 
 struct GeneralSettingsView: View {

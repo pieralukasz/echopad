@@ -1,0 +1,128 @@
+---
+title: Local API, CLI and webhooks
+description: Let scripts and agents on your Mac read conversations, start and stop recording, and get notified when a transcript is saved.
+---
+
+Everything here is **off by default**. Switch it on in **Settings → Integrations**:
+
+- **Local API**: the switch, the port (type it and press Return or **Apply**), and the status:
+  *Listening on 127.0.0.1:port*, *Off*, or the reason it could not start (for example a port another
+  app already uses; **Try Again** binds again). Changing these restarts only the API listener, never
+  a recording in progress. **Copy** puts the access token on the clipboard; it is never shown.
+- **Webhooks**: the switch, one row per receiver with its URL (checked as you type), the events it
+  gets (all by default) and **Include transcript** (off). **Copy** next to *Signing secret* copies the
+  key to verify signatures.
+
+The same settings live in `~/Library/Application Support/EchoPad/settings.json` (edit it only while
+EchoPad is quit, the app rewrites the file):
+
+```json
+{
+  "integrations": {
+    "apiEnabled": true,
+    "apiPort": 47821,
+    "webhooksEnabled": true,
+    "webhooks": [
+      { "url": "https://example.com/hooks/echopad", "events": ["conversation.saved"], "includeTranscript": false }
+    ]
+  }
+}
+```
+
+## Command line
+
+The `echopad` binary inside the app (`EchoPad.app/Contents/MacOS/echopad`) runs as a command-line tool when
+you give it a command. Without a command it opens the app. Commands never open a window or load the speech models.
+
+```bash
+echopad list --limit 20 --json        # conversations, newest first
+echopad show <id> --json
+echopad transcript <id>               # text; --format json for the full transcript
+echopad status                        # needs the local API
+echopad start --title "Weekly sync"   # needs the local API
+echopad stop                          # the app finishes and transcribes the recording
+echopad events --after 0              # recent events, oldest first
+```
+
+`list`, `show` and `transcript` read the library files directly and never change them, so they work while the
+app is closed. `--data-dir PATH` (or `ECHOPAD_DATA_DIR`) points them at another library. Exit status is 0 on
+success and 1 on failure, with the message on stderr.
+
+## Local API
+
+With `apiEnabled`, the app serves HTTP on `127.0.0.1` only, on `apiPort`. Every request needs the token that
+EchoPad writes to `~/Library/Application Support/EchoPad/api-token` (readable only by you):
+
+```bash
+curl -H "Authorization: Bearer $(cat ~/Library/Application\ Support/EchoPad/api-token)" http://127.0.0.1:47821/v1/status
+```
+
+| Request | What it does |
+|---|---|
+| `GET /v1/status` | `state` (`idle`, `recording`, `processing`, `saved`, `error`), `since`, `title`, `conversationID`, `step` |
+| `POST /v1/recording/start` | Starts recording; optional body `{"title": "…"}`. `409` if already recording or processing. |
+| `POST /v1/recording/stop` | Stops; answers `202` at once while the app transcribes. `409` if not recording. |
+| `GET /v1/conversations?limit=50` | Conversations, newest first |
+| `GET /v1/conversations/<id>` | One conversation |
+| `GET /v1/conversations/<id>/transcript` | `text` and the full `transcript` |
+| `GET /v1/events?after=<sequence>` | Events after a sequence number, with `stream` and `latest` |
+
+Requests from web pages (with an `Origin` header) and with a `Host` other than `127.0.0.1` or `localhost` are
+refused, and the API sends no CORS headers, so a website you visit cannot use it. Requests are limited to 64 KB
+and must arrive within 5 seconds. To revoke access, delete `api-token` and reopen EchoPad: it writes a new one.
+
+## Live transcript
+
+Off by default. Switch it on in **Settings → Transcription → Live transcript**, with the live
+language (Polish by default, *Detect automatically*, or another language of the model), the model
+look-ahead (0.56, 1.12 or 2.08 s: the model's window, shorter shows words sooner but less
+accurately; not the whole delay) and **Tell the other speakers apart** (LS-EEND). *Status* shows
+whether the model for that look-ahead is on disk; **Download Now** fetches it (about 1.2 GB, once)
+and prepares it. Otherwise this happens when the first recording starts; opening Settings never
+downloads or loads a model. When the download fails (no network, Hugging Face unavailable) the
+reason shows next to **Try Again**. The models live in `~/Library/Application Support/FluidAudio/Models`,
+next to Parakeet. Changes apply to the next recording.
+
+While recording, EchoPad then also runs Nemotron Unified ASR 0.6B and LS-EEND on the recorded audio
+(about 1.2 GB more memory). The pill and the menu bar show its state: a spinner while the model
+loads, a caption symbol while it listens (the menu also counts words), a yellow symbol with the
+reason when it failed. The recording itself carries on either way. To read along yourself, click
+the caption button in the pill or **Show Live Transcript** in the menu bar panel: see
+[The live transcript panel](/docs/recording#the-live-transcript-panel). It needs no local API. The saved transcript after Stop
+still comes from Parakeet, as before. In `settings.json` this is
+`"live": { "enabled": true, "engine": "nemotron-unified", "language": "pl", "latencyMs": 1120, "diarize": true }`
+(`language` is an ISO code or `null` for automatic).
+
+With the local API on, `GET /v1/recording/live?since=<revision>` (or `echopad live --since N`)
+returns the current text, the words changed after that revision (stable `id`, `textState` and
+`speakerState` `pending`/`final`, `isBleed`, always `false` here: every microphone word is kept, also
+an echo of the call without headphones), anonymous speakers (`Speaker 1`…; your microphone is
+the local speaker) and gaps where audio did not reach the model. It stays readable after Stop
+until the next recording; a discarded or too-short recording drops it. `echopad live-replay <id> [--paced]` sends a saved recording through the
+same live path without recording anything (it loads the live models, the library is only read).
+
+## Events and webhooks
+
+| Event | When |
+|---|---|
+| `recording.started` | Capture began |
+| `recording.stopped` | Capture ended; transcription follows |
+| `recording.discarded` | The recording was thrown away (too short, or discarded) |
+| `conversation.saved` | The transcript was saved to its save location |
+| `recording.failed` | Recording or transcription failed; `message` says why |
+
+Each event has an `id`, a `sequence` that grows by one, `type`, `createdAt`, and when known `conversationID`,
+`title`, `duration`, `wordCount`. Sequences restart when the app restarts, together with a new `stream` id.
+Live transcription will add a `transcript.segment` event on the same stream.
+
+With `webhooksEnabled`, every webhook in the list gets a `POST` with the event as JSON, in order, one at a time.
+Webhook URLs must use `https`; plain `http` is accepted only for `127.0.0.1` and `localhost`. `events` limits a
+webhook to some event types (empty sends all). The transcript is **never** sent unless the webhook sets
+`includeTranscript: true`; then `conversation.saved` also carries `transcriptText` and `transcript`.
+
+Requests follow [Standard Webhooks](https://www.standardwebhooks.com): `webhook-id` (the event id, the same on
+every retry, so you can drop duplicates), `webhook-timestamp` and `webhook-signature` (HMAC-SHA256 with the
+secret in `~/Library/Application Support/EchoPad/webhook-secret`). A failed delivery (network error, 408, 429 or
+5xx) is retried twice, after 2 and 10 seconds; other answers and redirects are not retried. Webhooks never hold up
+recording, and logs name only the webhook's host, never its path or query. Deliveries still queued when the app
+quits are dropped.

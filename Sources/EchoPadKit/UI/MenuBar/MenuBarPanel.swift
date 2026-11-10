@@ -81,10 +81,32 @@ struct MenuBarPanel: View {
             if appState.systemAudioLooksSilent || appState.soundTest != nil {
                 SoundCheckView()
             }
+            if let live = appState.live { LiveStatusRow(status: live) }
             destinationPicker
             Button("Discard Recording", role: .destructive, action: actions.discardRecording)
                 .buttonStyle(.link)
                 .font(.caption)
+        }
+    }
+
+    private struct LiveStatusRow: View {
+        let status: LiveStatus
+        @Environment(\.appActions) private var actions
+
+        var body: some View {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                LiveIndicator(status: status, size: .small)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(status.title).font(.caption)
+                    if case .failed(let message) = status {
+                        Text(message).font(.caption2).foregroundStyle(.secondary).lineLimit(3)
+                    }
+                }
+                Spacer(minLength: 8)
+                Button("Show Live Transcript", action: actions.showLiveTranscript)
+                    .buttonStyle(.link)
+                    .font(.caption)
+            }
         }
     }
 

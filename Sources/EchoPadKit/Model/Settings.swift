@@ -33,6 +33,10 @@ public struct Settings: Codable, Equatable, Sendable {
     /// Recordings kept in EchoPad's own library (0 = keep only the exported files).
     public var libraryLimit: Int
     public var hasCompletedOnboarding: Bool
+    /// Local API and webhooks, all off by default.
+    public var integrations: IntegrationSettings
+    /// Live transcript while recording (Nemotron Unified + LS-EEND), off by default.
+    public var live: LiveTranscriptionSettings
 
     public enum SystemAudioChoice: String, Codable, CaseIterable, Sendable {
         case everything, meetingApp, selectedApps, off
@@ -66,6 +70,8 @@ public struct Settings: Codable, Equatable, Sendable {
         asksForTitle = false
         libraryLimit = 50
         hasCompletedOnboarding = false
+        integrations = IntegrationSettings()
+        live = LiveTranscriptionSettings()
     }
 
     public var defaultDestination: Destination {
@@ -102,6 +108,8 @@ public struct Settings: Codable, Equatable, Sendable {
         decode(.asksForTitle, into: &asksForTitle)
         decode(.libraryLimit, into: &libraryLimit)
         decode(.hasCompletedOnboarding, into: &hasCompletedOnboarding)
+        decode(.integrations, into: &integrations)
+        decode(.live, into: &live)
         if destinations.isEmpty { destinations = [.makeDefault()] }
     }
 }

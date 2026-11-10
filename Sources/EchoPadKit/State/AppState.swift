@@ -72,6 +72,12 @@ public final class AppState {
     /// Result of the sound check's test sound in this recording; nil until it is played.
     public var soundTest: SoundCheck.TestResult?
     public var detectedMeeting: String?
+    /// Live transcript of the recording in progress; nil when live transcription is off for it.
+    public var live: LiveStatus?
+    /// Words of the live transcript, for the live transcript panel; kept after Stop until the next recording.
+    public var liveTranscript: LiveSnapshot?
+    /// The live model outside a recording (Settings > Transcription).
+    public var liveModel: LiveModelState = .notDownloaded
 
     private var resetTask: Task<Void, Never>?
 

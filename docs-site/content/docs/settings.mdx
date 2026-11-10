@@ -28,7 +28,18 @@ Settings save as you change them.
 | Identify speakers | On | Splits the system track into Speaker 1, Speaker 2… |
 | Your name | Your first name from macOS | The label for everything on the microphone track. |
 
-**Speech model** shows whether Parakeet is loaded and lets you retry a failed download.
+**Speech model** shows whether Parakeet is loaded and lets you retry a failed download. Parakeet
+makes the transcript saved after Stop. A load that makes no progress for 3 minutes is shown as
+failed, and **Try Again** starts a fresh one.
+
+**Live transcript** (off) adds a draft transcript while recording, in [a panel](/docs/recording#the-live-transcript-panel)
+you open from the pill or the menu bar, and for apps and agents on this Mac;
+see [Local API, CLI and webhooks](/docs/integrations#live-transcript). **Download Now** fetches the live
+model once (about 1.2 GB); opening Settings never downloads or loads it.
+
+## Integrations
+
+The local API (off) and webhooks (off): see [Local API, CLI and webhooks](/docs/integrations).
 
 ## General
 
