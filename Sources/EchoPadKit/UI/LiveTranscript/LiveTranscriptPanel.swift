@@ -19,44 +19,80 @@ struct LiveTranscriptLine: Identifiable, Equatable {
 
     var text: String { runs.map(\.text).joined(separator: " ") }
 
+    /// Same speaker as the line above it, so the panel draws it without the name and time.
+    var continuesSpeaker = false
+
     /// Builds the panel's lines from the current snapshot. Revised words replace their old
     /// text (the snapshot keeps one entry per word ID), so nothing is appended twice. Only the
     /// last `limit` lines are returned; the engine keeps the whole transcript.
+    ///
+    /// The live model sends punctuation as separate words: they stick to the speaker's line
+    /// without a space and never start a line. When two people talk over each other their
+    /// words interleave in time; a word goes back to its speaker's line while only short
+    /// interjections sit after it, so overlapping speech does not shatter into one-word lines.
     static func lines(from snapshot: LiveSnapshot, limit: Int = LiveTranscriptView.MAX_LINES)
         -> (lines: [LiveTranscriptLine], hidden: Int) {
+        struct Open { var key: String; var end: TimeInterval; var words: Int; var endsSentence: Bool }
         let names = Dictionary(snapshot.speakers.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         let words = snapshot.words.filter { !$0.isBleed }.sorted { ($0.start, $0.id) < ($1.start, $1.id) }
         var lines: [LiveTranscriptLine] = []
-        var lastKey: String?
-        var lastEnd: TimeInterval = 0
-        var lineWords = 0, endsSentence = false
+        var open: [Open] = []
         for word in words {
             let key = word.speakerID ?? "unassigned-\(word.track.rawValue)"
             let draft = word.textState == .pending
-            // A monologue still breaks into lines, so the line limit bounds what is drawn.
-            let full = lineWords >= MAX_LINE_WORDS || (endsSentence && lineWords >= SENTENCE_SPLIT_WORDS)
-            endsSentence = word.text.last.map { ".?!".contains($0) } ?? false
-            if key == lastKey, word.start - lastEnd <= PAUSE_SPLIT, !full, var line = lines.popLast() {
-                lineWords += 1
-                if line.runs.last?.isDraft == draft {
-                    line.runs[line.runs.count - 1].text += " " + word.text
-                } else {
-                    line.runs.append(Run(text: word.text, isDraft: draft))
+            let endsSentence = word.text.last.map { ".?!".contains($0) } ?? false
+            let own = open.indices.suffix(OPEN_LINES).last { open[$0].key == key }
+
+            if isPunctuation(word.text) {
+                guard let target = own ?? lines.indices.last else { continue }
+                if lines[target].runs.last?.text.hasSuffix(word.text) == false {
+                    lines[target].runs[lines[target].runs.count - 1].text += word.text
                 }
-                lines.append(line)
-            } else {
-                let speaker = word.speakerID.flatMap { names[$0] }
-                let label = speaker?.name ?? (word.track == .microphone ? "Me" : "Speaker…")
-                lineWords = 1
-                lines.append(LiveTranscriptLine(id: word.id, speaker: label,
-                                                isLocal: speaker?.isLocal ?? (word.track == .microphone),
-                                                start: word.start, runs: [Run(text: word.text, isDraft: draft)]))
+                // Only the newest line's end moves: a mark must not bridge a pause over an interjection.
+                if target == lines.count - 1 { open[target].end = max(open[target].end, word.end) }
+                open[target].endsSentence = endsSentence
+                continue
             }
-            lastKey = key
-            lastEnd = max(lastEnd, word.end)
+
+            if let index = own {
+                let line = open[index]
+                // A monologue still breaks into lines, so the line limit bounds what is drawn.
+                let full = line.words >= MAX_LINE_WORDS || (line.endsSentence && line.words >= SENTENCE_SPLIT_WORDS)
+                let gap = word.start - line.end
+                let isLast = index == lines.count - 1
+                let onlyInterjectionsAfter = open[(index + 1)...].allSatisfy { $0.words <= INTERJECTION_WORDS }
+                if !full, isLast ? gap <= PAUSE_SPLIT : (onlyInterjectionsAfter && gap <= OVERLAP_JOIN) {
+                    if lines[index].runs.last?.isDraft == draft {
+                        lines[index].runs[lines[index].runs.count - 1].text += " " + word.text
+                    } else {
+                        lines[index].runs.append(Run(text: word.text, isDraft: draft))
+                    }
+                    open[index].words += 1
+                    open[index].end = max(line.end, word.end)
+                    open[index].endsSentence = endsSentence
+                    continue
+                }
+            }
+
+            let speaker = word.speakerID.flatMap { names[$0] }
+            let label = speaker?.name ?? (word.track == .microphone ? "Me" : "Speaker…")
+            lines.append(LiveTranscriptLine(id: word.id, speaker: label,
+                                            isLocal: speaker?.isLocal ?? (word.track == .microphone),
+                                            start: word.start, runs: [Run(text: word.text, isDraft: draft)]))
+            open.append(Open(key: key, end: word.end, words: 1, endsSentence: endsSentence))
         }
         let hidden = max(0, lines.count - limit)
-        return (Array(lines.suffix(limit)), hidden)
+        var shown = Array(lines.suffix(limit))
+        for index in shown.indices.dropFirst() {
+            shown[index].continuesSpeaker = shown[index - 1].speaker == shown[index].speaker
+                && shown[index - 1].isLocal == shown[index].isLocal
+        }
+        return (shown, hidden)
+    }
+
+    /// A word with no letters or digits: ",", ".", "?" and the like.
+    static func isPunctuation(_ text: String) -> Bool {
+        !text.isEmpty && !text.contains { $0.isLetter || $0.isNumber }
     }
 
     /// A pause this long starts a new line even for the same speaker.
@@ -64,6 +100,12 @@ struct LiveTranscriptLine: Identifiable, Equatable {
     /// A sentence end starts a new line once the line has this many words.
     static let SENTENCE_SPLIT_WORDS = 25
     static let MAX_LINE_WORDS = 80
+    /// How many of the newest lines a word may go back to (its speaker's line plus one other).
+    static let OPEN_LINES = 2
+    /// A line this short after a speaker's line is an interjection, not a new turn.
+    static let INTERJECTION_WORDS = 3
+    /// Going back over an interjection only for a word this close to the speaker's last one.
+    static let OVERLAP_JOIN: TimeInterval = 1
 }
 
 /// Keeps the panel at the newest line only while the reader is there. Scrolling up stops
@@ -139,14 +181,16 @@ struct LiveTranscriptView: View {
 
     private func transcript(_ lines: [LiveTranscriptLine], hidden: Int) -> some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 12) {
+            LazyVStack(alignment: .leading, spacing: 0) {
                 if hidden > 0 {
                     Text("\(hidden) earlier lines are not shown here. The whole live transcript is kept.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                        .padding(.bottom, 12)
                 }
-                ForEach(lines) { line in
+                ForEach(Array(lines.enumerated()), id: \.element.id) { index, line in
                     LineView(line: line)
+                        .padding(.top, index == 0 ? 0 : (line.continuesSpeaker ? 6 : 12))
                 }
             }
             .padding(14)
@@ -235,15 +279,18 @@ struct LiveTranscriptView: View {
 
         var body: some View {
             VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 6) {
-                    Text(line.speaker).font(.caption.weight(.semibold))
-                        .foregroundStyle(line.isLocal ? Color.accentColor : Color.primary)
-                    Text(Self.time(line.start)).font(.caption.monospacedDigit()).foregroundStyle(.tertiary)
+                if !line.continuesSpeaker {
+                    HStack(spacing: 6) {
+                        Text(line.speaker).font(.caption.weight(.semibold))
+                            .foregroundStyle(line.isLocal ? Color.accentColor : Color.primary)
+                        Text(Self.time(line.start)).font(.caption.monospacedDigit()).foregroundStyle(.tertiary)
+                    }
                 }
                 Text(attributed)
                     .font(.body)
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
+                    .help(line.continuesSpeaker ? "\(line.speaker), \(Self.time(line.start))" : "")
             }
         }
 

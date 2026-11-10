@@ -165,6 +165,41 @@ final class LiveTranscriptPanelTests: XCTestCase {
         XCTAssertEqual(lines.map { $0.text.split(separator: " ").count }.reduce(0, +), 400, "no word is lost or doubled")
     }
 
+    func testPunctuationSticksToTheSpeakersLineAndNeverStartsOne() {
+        let lines = LiveTranscriptLine.lines(from: snapshot([
+            word("a", "Chcę", 0), word("b", "drugi", 0.4), word("c", ".", 0.8), word("d", "Na", 1.0),
+            word("e", "przykład", 1.4),
+            word("f", "No", 3.5, speaker: "s2"),
+            word("g", ",", 6.0), word("h", "niech", 6.2), word("i", "będzie", 6.6), word("j", ".", 7.0),
+            word("k", ".", 7.1, speaker: nil),
+        ], revision: 1)).lines
+        XCTAssertEqual(lines.map(\.text), ["Chcę drugi. Na przykład,", "No", "niech będzie."])
+        XCTAssertEqual(lines.map(\.speaker), ["Speaker 1", "Speaker 2", "Speaker 1"])
+    }
+
+    func testOverlappingSpeechStaysInEachSpeakersLine() {
+        // Two people talking over each other: their words interleave within a second.
+        let lines = LiveTranscriptLine.lines(from: snapshot([
+            word("a", "No", 12.5), word("b", "też", 13.0), word("c", "nie", 13.3),
+            word("d", "Ale", 13.5, speaker: "s2"), word("e", "bych", 13.4), word("f", "opowiedz", 13.8, speaker: "s2"),
+            word("g", "to", 13.6), word("h", "miał", 13.7), word("i", "mi", 14.2, speaker: "s2"),
+            word("j", "działać", 13.9), word("k", "błąd", 14.3, speaker: "s2"),
+        ], revision: 1)).lines
+        XCTAssertEqual(lines.map(\.text), ["No też nie bych to miał działać", "Ale opowiedz mi błąd"])
+    }
+
+    func testAlternatingTurnsKeepTheirOrderAndRepeatedSpeakersShowOneHeader() {
+        let lines = LiveTranscriptLine.lines(from: snapshot([
+            word("a", "Jeden", 0), word("b", "sklep", 0.4),
+            word("c", "Drugi", 4.0), word("d", "sklep", 4.4),
+            word("e", "Tak", 6.0, speaker: "s2"),
+            word("f", "Trzeci", 9.0),
+        ], revision: 1)).lines
+        XCTAssertEqual(lines.map(\.text), ["Jeden sklep", "Drugi sklep", "Tak", "Trzeci"])
+        XCTAssertEqual(lines.map(\.continuesSpeaker), [false, true, false, false],
+                       "a pause starts a new line, but the same speaker's next line has no second name")
+    }
+
         func testNewWordsDoNotStopFollowingButScrollingUpDoesUntilTheReaderReturns() {
         var follow = ScrollFollowing()
         follow.scrolled(distanceFromBottom: 0, contentHeight: 500)
