@@ -17,6 +17,7 @@ struct MainView: View {
                 Section("Settings") {
                     row(.recording, "Recording", "mic")
                     row(.transcription, "Transcription", "text.bubble")
+                    row(.integrations, "Integrations", "point.3.connected.trianglepath.dotted")
                     row(.general, "General", "gearshape")
                     row(.about, "About", "info.circle")
                 }
@@ -39,6 +40,7 @@ struct MainView: View {
         case .destinations: DestinationsView()
         case .recording: RecordingSettingsView()
         case .transcription: TranscriptionSettingsView()
+        case .integrations: IntegrationsSettingsView()
         case .general: GeneralSettingsView()
         case .about: AboutView()
         }

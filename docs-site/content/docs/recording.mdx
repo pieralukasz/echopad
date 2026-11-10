@@ -35,7 +35,7 @@ Because your voice comes from its own track, it is always attributed to you, eve
 
 <PillStage />
 
-The pill floats above other windows at the bottom of the screen. While recording it shows a red dot, the elapsed time, a waveform and a stop button. After you stop it shows progress, then **Saved**.
+The pill floats above other windows at the bottom of the screen. While recording it shows a red dot, the elapsed time, a waveform and a stop button (with live transcript on, also a caption button that opens [the live transcript panel](#the-live-transcript-panel)). After you stop it shows progress, then **Saved**.
 
 - **Move:** drag the pill anywhere. EchoPad remembers the spot, also on other displays. Drop it near its old place at the bottom and it snaps back.
 - **Close:** hover over the pill and click the **×** in its corner. The recording keeps going; stop it from the menu bar or with the shortcut. The pill comes back for the next recording, and a problem message still shows.
@@ -44,6 +44,34 @@ The pill floats above other windows at the bottom of the screen. While recording
 Hide it for good in **Settings → General → Show the floating recording pill**.
 
 If a detected call stays silent on the system track for 20 seconds, a yellow speaker appears in the pill. Click it to open the sound check in the menu bar panel. It shows whether the System Audio Recording permission is allowed and which apps are recorded, with a button to fix each problem. **Play Test Sound** plays a short sound on your Mac and listens for it: if EchoPad hears it, capture works and the other side is just quiet. The test sound ends up in the recording.
+
+## The live transcript panel
+
+With **Live transcript** on (Settings → Transcription), the pill shows a caption button while
+recording; it is also **Show Live Transcript** in the menu bar panel. It opens a small floating
+window with the words so far, labelled with who spoke (you, or Speaker 1, Speaker 2… on the system
+track). Grey words are a draft: the model may still change them, and they turn black in place when
+they settle.
+
+- The window stays above other windows but never takes the keyboard from the app you are in.
+  Closing it does not stop or pause the recording or the live transcript; open it again any time.
+- It follows the newest words while you are at the end. Scroll up to read earlier lines and it
+  stays where you are; **Resume Following** jumps back to the end.
+- In a long recording it shows the last 300 lines; the whole live transcript is still kept and the
+  local API returns all of it.
+- It shows when the model is still loading, when live transcript is off for this recording, and
+  why it failed. After Stop it keeps the live text until the next recording; the saved transcript
+  is made separately by Parakeet.
+
+## If transcribing gets stuck
+
+After Stop the pill shows the transcription steps. When a step makes no progress for too long
+(loading the speech model: 3 minutes without download or loading progress; each transcription step:
+2 minutes plus half the recording's length), EchoPad stops waiting: the conversation shows
+**Failed** with the reason and **Transcribe Again**, and the audio stays in the library. The next try
+loads a fresh speech model instead of waiting behind the stuck one. A stuck model cannot be
+interrupted, so its memory is only given back when EchoPad quits. A long recording that keeps
+making progress is never cut off.
 
 ## Importing audio
 

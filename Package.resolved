@@ -1,13 +1,13 @@
 {
-  "originHash" : "77f89de755ad65dcd345956de0baf96587a1c6922a8b896172df2e5bce999e26",
+  "originHash" : "862676e23818b4284e281a0ab7a751f367a4d1cc95d2a02fe8e47290d9acf270",
   "pins" : [
     {
       "identity" : "fluidaudio",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/FluidInference/FluidAudio.git",
       "state" : {
-        "revision" : "21493f8dac5a97e65742e6ff26f42f164c2fda0f",
-        "version" : "0.17.4"
+        "revision" : "c8b41f98eae668794dd0083bbe028fe7e6585051",
+        "version" : "0.18.3"
       }
     },
     {
@@ -15,8 +15,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/pieralukasz/ScribeKit.git",
       "state" : {
-        "revision" : "17385c5758d16ca5204e1f78528b21c8104f695b",
-        "version" : "0.1.0"
+        "revision" : "d836b7653034addfd5ecfe2c50c2c015ef93da29",
+        "version" : "0.2.0"
       }
     },
     {
@@ -24,8 +24,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/pieralukasz/SystemAudioKit.git",
       "state" : {
-        "revision" : "48d2e6112d9e79d24b13be0bb46422ede50789a7",
-        "version" : "0.1.0"
+        "revision" : "f3c76931a618dc7a960950aee2ec93362f0f92fb",
+        "version" : "0.2.0"
       }
     }
   ],

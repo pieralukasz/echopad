@@ -3,6 +3,15 @@ import Foundation
 import ScribeKit
 import SystemAudioKit
 
+/// The part of ScribeKit's ``Scribe`` that makes the saved transcript; a fake in tests.
+public protocol ConversationTranscribing: Actor {
+    func prepare(diarization: Bool, progress: (@Sendable (ModelProgress) -> Void)?) async throws
+    func transcribeConversation(microphone: URL?, system: URL?, options: TranscriptionOptions,
+                                progress: (@Sendable (TranscriptionStage) -> Void)?) async throws -> Transcript
+}
+
+extension Scribe: ConversationTranscribing {}
+
 /// Runs a recording from start to saved files: capture with SystemAudioKit, transcribe
 /// with ScribeKit, then export to the chosen destination and run its after-save actions.
 @MainActor
@@ -16,15 +25,25 @@ public final class RecordingController {
     static let TEST_SOUND = "/System/Library/Sounds/Ping.aiff"
     /// Shorter recordings are treated as accidental and discarded.
     static let MINIMUM_DURATION: TimeInterval = 1.5
+    /// How often the pill, the menu and the live transcript panel take the live state.
+    static let LIVE_REFRESH: Duration = .milliseconds(500)
 
     private let appState: AppState
     private let library: ConversationLibrary
     private let recorder = AudioRecorder()
-    private let scribe: Scribe
+    /// Makes the saved transcript. Replaced by a fresh one from `makeScribe` after a step got
+    /// stuck, so a retry never calls into the stuck model again.
+    private var scribe: any ConversationTranscribing
+    private let makeScribe: () -> any ConversationTranscribing
+    /// Time without progress after which a step of the saved transcript counts as stuck.
+    var modelLoadBudget = TranscriptionBudget.MODEL_LOAD
+    var stepBudget: (TimeInterval) -> Duration = TranscriptionBudget.step
     public var settings: Settings
     public var sounds: SoundPlayer?
     public var onSaved: ((Conversation) -> Void)?
     public var onError: ((String) -> Void)?
+    /// Receives recording events for the local API and webhooks.
+    public var events: EventLog?
     /// Asked for a title when a recording stops and `asksForTitle` is on; nil keeps the current title.
     public var askForTitle: ((String) async -> String?)?
 
@@ -35,12 +54,23 @@ public final class RecordingController {
     private var silentSince: Date?
     /// Set while the sound check listens, so the silence timer does not take its peak.
     private var isTestingSound = false
+    /// Live transcript of the current recording, kept after Stop until the next one starts.
+    private var live: LiveSession?
+    private var liveConversationID: UUID?
+    /// Copies the live session's state into ``AppState/live`` for the pill and the menu.
+    private var liveWatch: Task<Void, Never>?
 
-    public init(appState: AppState, library: ConversationLibrary, settings: Settings, scribe: Scribe = .shared) {
+    public convenience init(appState: AppState, library: ConversationLibrary, settings: Settings) {
+        self.init(appState: appState, library: library, settings: settings, scribe: Scribe.shared, makeScribe: { Scribe() })
+    }
+
+    init(appState: AppState, library: ConversationLibrary, settings: Settings,
+         scribe: any ConversationTranscribing, makeScribe: @escaping () -> any ConversationTranscribing) {
         self.appState = appState
         self.library = library
         self.settings = settings
         self.scribe = scribe
+        self.makeScribe = makeScribe
         recorder.onLevels = { [weak appState] mic, system in
             Task { @MainActor in appState?.push(microphone: mic, system: system) }
         }
@@ -66,9 +96,12 @@ public final class RecordingController {
         meetingBundleID = meeting?.bundleID
 
         let configuration = configuration(for: meeting)
+        let session = settings.live.enabled ? LiveSession(settings: settings.live) : nil
+        recorder.liveFeed = session?.feed
         do {
             try await recorder.start(configuration, in: folder)
         } catch {
+            recorder.liveFeed = nil
             try? FileManager.default.removeItem(at: folder)
             fail(Self.describe(error))
             return
@@ -76,6 +109,11 @@ public final class RecordingController {
 
         currentID = id
         startDate = date
+        if let previous = live { Task { await previous.cancel() } }
+        live = session
+        liveConversationID = session == nil ? nil : id
+        if let session { await session.start() }
+        watchLive(session)
         appState.currentTitle = title ?? defaultTitle(meeting: meeting, date: date)
         appState.currentApp = meeting?.appName
         appState.currentDestinationID = destinationID ?? settings.defaultDestinationID
@@ -83,6 +121,7 @@ public final class RecordingController {
         appState.soundTest = nil
         appState.captureScope = Self.scope(of: configuration, meeting: meeting)
         appState.transition(to: .recording(since: date))
+        events?.emit(.recordingStarted, conversationID: id, title: appState.currentTitle)
         sounds?.play(.start)
         watchSystemAudio()
     }
@@ -97,14 +136,19 @@ public final class RecordingController {
         sounds?.play(.stop)
 
         guard let recording = await recorder.stop() else {
+            // Its feed may never be closed: stop the live model instead of leaving it waiting.
+            await live?.cancel()
             fail("The recording could not be finished.")
             return
         }
         currentID = nil
         self.startDate = nil
+        events?.emit(.recordingStopped, conversationID: id, title: appState.currentTitle, duration: recording.duration)
 
         if recording.duration < Self.MINIMUM_DURATION {
+            await dropLive()
             try? FileManager.default.removeItem(at: library.folder(for: id))
+            events?.emit(.recordingDiscarded, conversationID: id)
             appState.transition(to: .idle)
             return
         }
@@ -130,9 +174,11 @@ public final class RecordingController {
         guard appState.phase.isRecording, let id = currentID else { return }
         silenceTimer?.invalidate()
         _ = await recorder.stop()
+        await dropLive()
         try? FileManager.default.removeItem(at: library.folder(for: id))
         currentID = nil
         startDate = nil
+        events?.emit(.recordingDiscarded, conversationID: id)
         appState.transition(to: .idle)
     }
 
@@ -164,27 +210,71 @@ public final class RecordingController {
 
         do {
             let appState = self.appState
-            let transcript = try await scribe.transcribeConversation(
-                microphone: tracks.microphone, system: tracks.system, options: options,
-                progress: { stage in
-                    Task { @MainActor in
+            let scribe = self.scribe
+            let step = stepBudget(conversation.duration)
+            let load = modelLoadBudget
+            let loading = "Loading the speech model"
+            let transcript = try await Watchdog.run(budget: load, stage: loading) { watch in
+                try await scribe.transcribeConversation(
+                    microphone: tracks.microphone, system: tracks.system, options: options,
+                    progress: { stage in
                         switch stage {
-                        case .identifyingSpeakers: appState.transition(to: .processing(.identifyingSpeakers))
-                        case .finishing: appState.transition(to: .processing(.saving))
-                        default: break
+                        case .loadingModels: watch.advance(stage: loading, budget: load)
+                        case .transcribing(let track): watch.advance(stage: "Transcribing the \(track)", budget: step)
+                        case .identifyingSpeakers: watch.advance(stage: "Identifying speakers", budget: step)
+                        default: watch.advance(stage: "Finishing the transcript", budget: step)
                         }
-                    }
-                })
+                        Task { @MainActor in
+                            switch stage {
+                            case .identifyingSpeakers: appState.transition(to: .processing(.identifyingSpeakers))
+                            case .finishing: appState.transition(to: .processing(.saving))
+                            default: break
+                            }
+                        }
+                    })
+            }
             try library.store(transcript, for: id)
             conversation = library.conversation(id: id) ?? conversation
             try export(conversation, transcript: transcript)
+        } catch let stuck as Watchdog.TimedOut {
+            resetSpeechModel()
+            let message = "The transcript was not finished: \(stuck.stage.lowercased()) made no progress for \(stuck.seconds) s. The audio is kept; choose Transcribe Again."
+            library.update(id) { $0.status = .failed(message) }
+            fail(message, conversationID: id)
+            return
         } catch {
             let message = Self.describe(error)
             library.update(id) { $0.status = .failed(message) }
-            fail(message)
+            fail(message, conversationID: id)
             return
         }
         library.enforceAudioLimit(settings.libraryLimit)
+    }
+
+    /// Downloads (first time) and loads the speech model ahead of the first recording.
+    public func prepareSpeechModel(diarization: Bool, progress: (@Sendable (ModelProgress) -> Void)?) async throws {
+        let scribe = self.scribe
+        let stage = "Loading the speech model"
+        do {
+            try await Watchdog.run(budget: modelLoadBudget, stage: stage) { watch in
+                try await scribe.prepare(diarization: diarization) { update in
+                    watch.advance()
+                    progress?(update)
+                }
+            }
+        } catch let stuck as Watchdog.TimedOut {
+            resetSpeechModel()
+            throw stuck
+        }
+    }
+
+    /// Drops the speech model after a step got stuck. CoreML gives no way to interrupt the
+    /// stuck call, so its memory is not freed here; the next transcription loads a new model
+    /// instead of queueing behind it.
+    func resetSpeechModel() {
+        Log.recording.error("A speech model step got stuck; the next transcription loads a new model.")
+        scribe = makeScribe()
+        appState.model = .notLoaded
     }
 
     /// Writes the stored transcript again (for example after renaming speakers or
@@ -205,6 +295,8 @@ public final class RecordingController {
             $0.exportedAudio = result.audio?.path
         }
         appState.transition(to: .saved(title: conversation.title), resetAfter: 2.5)
+        events?.emit(.conversationSaved, conversationID: conversation.id, title: conversation.title,
+                     duration: conversation.duration, wordCount: transcript.wordCount)
         sounds?.play(.saved)
         if runActions {
             let library = library
@@ -310,8 +402,34 @@ public final class RecordingController {
         })
     }
 
-    private func fail(_ message: String) {
+    private func watchLive(_ session: LiveSession?) {
+        liveWatch?.cancel()
+        appState.live = session == nil ? nil : .preparing
+        appState.liveTranscript = nil
+        guard let session else { return }
+        liveWatch = Task { [weak self] in
+            while !Task.isCancelled {
+                let (status, snapshot) = await session.current()
+                guard !Task.isCancelled, let self else { return }
+                if self.appState.live != status { self.appState.live = status }
+                if self.appState.liveTranscript != snapshot { self.appState.liveTranscript = snapshot }
+                if status.isTerminal { return }
+                try? await Task.sleep(for: Self.LIVE_REFRESH)
+            }
+        }
+    }
+
+    /// A thrown-away recording keeps no live transcript either.
+    private func dropLive() async {
+        await live?.cancel()
+        live = nil
+        liveConversationID = nil
+        watchLive(nil)
+    }
+
+    private func fail(_ message: String, conversationID: UUID? = nil) {
         Log.recording.error("\(message, privacy: .public)")
+        events?.emit(.recordingFailed, conversationID: conversationID ?? currentID, message: message)
         appState.transition(to: .error(message), resetAfter: 6)
         sounds?.play(.error)
         onError?(message)
@@ -320,5 +438,24 @@ public final class RecordingController {
     static func describe(_ error: Error) -> String {
         if let error = error as? LocalizedError, let description = error.errorDescription { return description }
         return error.localizedDescription
+    }
+}
+
+extension RecordingController: RecordingControlling {
+    public var recordingStatus: RecordingStatus {
+        RecordingStatus(phase: appState.phase, title: appState.currentTitle, conversationID: currentID)
+    }
+
+    public func startRecording(title: String?) async {
+        await start(title: title)
+    }
+
+    public func stopRecording() {
+        Task { await stop() }
+    }
+
+    public func liveTranscript() async -> LiveTranscriptStatus? {
+        guard let live else { return nil }
+        return LiveTranscriptStatus(conversationID: liveConversationID, snapshot: await live.snapshot())
     }
 }

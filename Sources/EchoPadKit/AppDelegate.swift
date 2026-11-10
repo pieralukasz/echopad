@@ -16,8 +16,10 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     private var recorder: RecordingController!
     private var statusBar: StatusBarController!
     private var pill: RecordingPillController!
+    private var liveTranscriptPanel: LiveTranscriptPanelController?
     private var windows: WindowCoordinator!
     private var modelTask: Task<Void, Never>?
+    private var integrations: IntegrationHub!
 
     public override init() {
         super.init()
@@ -56,6 +58,8 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         recorder.sounds = sounds
         recorder.askForTitle = { [weak self] current in await self?.askForTitle(current) }
         recorder.onError = { message in print("EchoPad: \(message)") }
+        integrations = IntegrationHub(controller: recorder, libraryDirectory: library.directory)
+        recorder.events = integrations.events
 
         windows = WindowCoordinator(environment: { [unowned self] view in self.inject(view) })
         statusBar = StatusBarController(appState: appState, content: inject(AnyView(MenuBarPanel())))
@@ -72,6 +76,21 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         settings.onChange = { [weak self] new, old in self?.apply(new, old: old) }
         apply(settings.value, old: nil)
         loadModels()
+
+        // Test copies only: force dark mode in this app without touching the system appearance.
+        if ProcessInfo.processInfo.environment["ECHOPAD_APPEARANCE"] == "dark" {
+            NSApp.appearance = NSAppearance(named: .darkAqua)
+        }
+        // Test copies open one section at launch for window checks (never the installed app's default).
+        if let raw = ProcessInfo.processInfo.environment["ECHOPAD_OPEN_SECTION"],
+           let section = MainSection(debugName: raw) {
+            windows.showMain(section: section)
+            if let size = ProcessInfo.processInfo.environment["ECHOPAD_WINDOW_SIZE"]?.split(separator: "x").compactMap({ Double($0) }),
+               size.count == 2, let window = NSApp.windows.first(where: { $0.frameAutosaveName == "EchoPadMain" }) {
+                window.setContentSize(NSSize(width: size[0], height: size[1]))
+                window.center()
+            }
+        }
 
         if !settings.value.hasCompletedOnboarding {
             windows.showOnboarding { [weak self] in
@@ -100,6 +119,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func apply(_ value: Settings, old: Settings?) {
         recorder.settings = value
+        integrations.apply(value.integrations)
         sounds.isEnabled = value.playsSounds
         pill.isEnabled = value.showsPill
         meetings.setEnabled(value.detectsMeetings)
@@ -120,7 +140,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         state.model = .loading(fraction: nil, detail: "")
         modelTask = Task {
             do {
-                try await Scribe.shared.prepare(diarization: diarize) { progress in
+                try await recorder.prepareSpeechModel(diarization: diarize) { progress in
                     Task { @MainActor in state.model = .loading(fraction: progress.fraction, detail: progress.detail) }
                 }
                 state.model = .ready
@@ -129,6 +149,34 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
                 state.model = .failed(RecordingController.describe(error))
             }
         }
+    }
+
+    /// Downloads (first time) and compiles the live models, then frees them; a recording
+    /// loads them again. Only on the user's request.
+    private func prepareLiveModel() {
+        guard appState.liveModel != .preparing else { return }
+        let state = appState
+        state.liveModel = .preparing
+        let options = settings.value.live.options
+        Task {
+            let transcriber = LiveTranscriber(options: options)
+            do {
+                try await transcriber.start()
+                await transcriber.cancel()
+                state.liveModel = .downloaded
+            } catch {
+                await transcriber.cancel()
+                state.liveModel = .failed(RecordingController.describe(error))
+            }
+        }
+    }
+
+    /// The live transcript panel, made on first use and only hidden when closed.
+    private func showLiveTranscript() {
+        if liveTranscriptPanel == nil {
+            liveTranscriptPanel = LiveTranscriptPanelController(content: inject(AnyView(LiveTranscriptView())))
+        }
+        liveTranscriptPanel?.show()
     }
 
     /// Transcribes recordings left over from a quit or crash, oldest first.
@@ -146,6 +194,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
             .environment(appState)
             .environment(settings)
             .environment(library)
+            .environment(integrations.status)
             .environment(\.appActions, actions))
     }
 
@@ -171,6 +220,17 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
             renameSpeaker: { [weak self] id, speaker, name in self?.renameSpeaker(id, speaker: speaker, to: name) },
             importAudio: { [weak self] in self?.importAudio() },
             retryModel: { [weak self] in self?.loadModels() },
+            prepareLiveModel: { [weak self] in self?.prepareLiveModel() },
+            showLiveTranscript: { [weak self] in
+                self?.statusBar.closePopover()
+                self?.showLiveTranscript()
+            },
+            retryAPI: { [weak self] in self?.integrations.retryAPI() },
+            copySecret: { [weak self] kind in
+                guard let secret = self?.integrations.secret(kind) else { return false }
+                NSPasteboard.general.clearContents()
+                return NSPasteboard.general.setString(secret, forType: .string)
+            },
             quit: { NSApp.terminate(nil) }
         )
     }

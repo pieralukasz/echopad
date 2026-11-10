@@ -63,6 +63,10 @@ Coming from EchoPad 1.x (Python)? The installer quits it, turns off its login it
 
 Uninstall with `scripts/uninstall.sh`, or `scripts/uninstall.sh --purge` to also delete settings and the conversation library. Transcripts in your save locations are never touched.
 
+## Local API, CLI and webhooks
+
+Off by default. `echopad list`, `show` and `transcript` read the library without changing it; with the local API turned on, `echopad status`, `start` and `stop` control the running app over an authenticated HTTP API on `127.0.0.1`, and webhooks can tell another tool when a transcript is saved (the transcript itself only if you opt in). See [Local API, CLI and webhooks](https://echopad.lucaspiera.com/docs/integrations).
+
 ## Packages
 
 EchoPad is built on two Swift packages that you can use in your own apps:
@@ -82,7 +86,7 @@ cd docs-site && bun install && bun run dev
 
 ```bash
 swift test
-swift build -c release && scripts/bundle-app.sh .build/release/echopad .build/EchoPad.app 2.0.0
+swift build -c release && scripts/bundle-app.sh .build/release/echopad .build/EchoPad.app 2.1.0
 open -n --env ECHOPAD_DATA_DIR=/tmp/echopad-dev .build/EchoPad.app   # separate library and settings
 ```
 
